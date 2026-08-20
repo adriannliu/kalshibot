@@ -54,6 +54,14 @@ class MarketMeta:
             + no_price * (SETTLEMENT_VALUE - no_price)
         )
 
+    def maker_leg_fee(self, yes_price: Decimal) -> Decimal:
+        return (
+            self.maker_multiplier
+            * exchange.MAKER_FEE_RATE
+            * yes_price
+            * (SETTLEMENT_VALUE - yes_price)
+        )
+
     def taker_pair_fee(self, yes_price: Decimal, no_price: Decimal) -> Decimal:
         return self.taker_multiplier * exchange.TAKER_FEE_RATE * (
             yes_price * (SETTLEMENT_VALUE - yes_price)

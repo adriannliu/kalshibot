@@ -167,3 +167,31 @@ def test_report_is_json_serializable(tmp_path):
 
     report = analyze_session(directory).markets["TEST-A"].report()
     assert json.loads(json.dumps(report))["trades_measured"] == 1
+
+
+def test_maker_fees_are_netted_at_the_fill_price(tmp_path):
+    def build(name, maker_multiplier):
+        session = SyntheticSession(str(tmp_path), session_id=name)
+        session.market(
+            "TEST-A",
+            maker_multiplier=maker_multiplier,
+            fee_regime="maker_free" if maker_multiplier == "0" else "maker_charged",
+        )
+        session.subscribe(["TEST-A"])
+        session.snapshot("TEST-A", [["0.4000", "100.00"]], [["0.5500", "80.00"]])
+        session.advance(1.0).trade("TEST-A", "0.4000", count="10.00", taker_outcome_side="no")
+        session.advance(2.0).delta("TEST-A", "yes", "0.3000", "1.00")
+        return analyze_session(session.write()).markets["TEST-A"].curve.horizon("1s")
+
+    free = build("fee-free", "0")
+    charged = build("fee-charged", "1")
+
+    assert free.maker_pnl.mean() == Decimal("0.025")
+    assert free.net_maker_pnl.mean() == Decimal("0.025")
+    assert free.maker_fees == Decimal("0")
+
+    leg_fee = Decimal("0.0175") * Decimal("0.40") * Decimal("0.60")
+    assert charged.maker_pnl.mean() == Decimal("0.025")
+    assert charged.net_maker_pnl.mean() == Decimal("0.025") - leg_fee
+    assert charged.maker_fees == leg_fee * 10
+    assert charged.contracts_fp == 1000

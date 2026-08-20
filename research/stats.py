@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 DEFAULT_QUANTILES = (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
@@ -130,17 +130,20 @@ class DurationHistogram:
 class SignedSummary:
     count: int = 0
     total: Decimal = Decimal(0)
+    total_squared: Decimal = Decimal(0)
     histogram: WeightedHistogram = field(default_factory=WeightedHistogram)
     scale: int = 10000
 
     def add(self, value: Decimal, weight: int = 1) -> None:
         self.count += weight
         self.total += value * weight
-        self.histogram.add(int((value * self.scale).to_integral_value()), weight)
+        self.total_squared += value * value * weight
+        self.histogram.add(int((value * self.scale).to_integral_value(rounding=ROUND_FLOOR)), weight)
 
     def merge(self, other: "SignedSummary") -> None:
         self.count += other.count
         self.total += other.total
+        self.total_squared += other.total_squared
         self.histogram.merge(other.histogram)
 
     def mean(self) -> Optional[Decimal]:
@@ -148,11 +151,37 @@ class SignedSummary:
             return None
         return self.total / self.count
 
+    def variance(self) -> Optional[Decimal]:
+        if self.count < 2:
+            return None
+        mean = self.total / self.count
+        spread = self.total_squared / self.count - mean * mean
+        return spread if spread > 0 else Decimal(0)
+
+    def standard_error(self) -> Optional[Decimal]:
+        variance = self.variance()
+        if variance is None:
+            return None
+        return Decimal(math.sqrt(float(variance / self.count)))
+
+    def mean_lower_bound(self, sigmas: Decimal = Decimal(2)) -> Optional[Decimal]:
+        mean = self.mean()
+        error = self.standard_error()
+        if mean is None:
+            return None
+        if error is None:
+            return mean
+        return mean - sigmas * error
+
     def summary(self, qs: Sequence[float] = DEFAULT_QUANTILES) -> Dict[str, object]:
         mean = self.mean()
+        error = self.standard_error()
+        lower = self.mean_lower_bound()
         payload: Dict[str, object] = {
             "count": self.count,
             "mean": None if mean is None else str(mean),
+            "standard_error": None if error is None else str(error),
+            "mean_lower_bound_2se": None if lower is None else str(lower),
         }
         for q in qs:
             key = self.histogram.quantile(q)

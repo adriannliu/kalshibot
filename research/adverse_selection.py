@@ -53,12 +53,18 @@ def size_bucket(count_fp: int) -> str:
 class HorizonSummary:
     mid_move: SignedSummary = field(default_factory=SignedSummary)
     maker_pnl: SignedSummary = field(default_factory=SignedSummary)
+    net_maker_pnl: SignedSummary = field(default_factory=SignedSummary)
+    maker_fees: Decimal = Decimal(0)
+    contracts_fp: int = 0
     unresolved_book_invalid: int = 0
     unresolved_stream_ended: int = 0
 
     def merge(self, other: "HorizonSummary") -> None:
         self.mid_move.merge(other.mid_move)
         self.maker_pnl.merge(other.maker_pnl)
+        self.net_maker_pnl.merge(other.net_maker_pnl)
+        self.maker_fees += other.maker_fees
+        self.contracts_fp += other.contracts_fp
         self.unresolved_book_invalid += other.unresolved_book_invalid
         self.unresolved_stream_ended += other.unresolved_stream_ended
 
@@ -69,6 +75,9 @@ class HorizonSummary:
         return {
             "mid_move_dollars": self.mid_move.summary(),
             "maker_pnl_dollars": self.maker_pnl.summary(),
+            "net_maker_pnl_dollars": self.net_maker_pnl.summary(),
+            "maker_fees_dollars": str(self.maker_fees),
+            "contracts": str(contracts(self.contracts_fp)),
             "unresolved_book_invalid": self.unresolved_book_invalid,
             "unresolved_stream_ended": self.unresolved_stream_ended,
         }
@@ -155,6 +164,8 @@ class _Pending:
     taker_bought_yes: bool
     mid_before: Decimal
     maker_entry: Decimal
+    maker_leg_fee: Decimal
+    count_fp: int
     price_bucket: str
     size_bucket: str
 
@@ -205,6 +216,9 @@ class AdverseSelectionAnalysis:
             summary = curve.horizon(pending.label)
             summary.mid_move.add(mid_move)
             summary.maker_pnl.add(maker_pnl)
+            summary.net_maker_pnl.add(maker_pnl - pending.maker_leg_fee)
+            summary.maker_fees += pending.maker_leg_fee * contracts(pending.count_fp)
+            summary.contracts_fp += pending.count_fp
 
     def _drain(self, now_ns: int, inclusive: bool) -> None:
         for queue in self._pending.values():
@@ -242,6 +256,7 @@ class AdverseSelectionAnalysis:
         market.trades_measured += 1
         taker_bought_yes = event.taker_bought_yes
         maker_entry = event.yes_price
+        maker_leg_fee = market.meta.maker_leg_fee(event.yes_price)
         bucket_price = price_bucket(top.mid)
         bucket_size = size_bucket(event.count_fp)
 
@@ -255,6 +270,8 @@ class AdverseSelectionAnalysis:
                     taker_bought_yes=taker_bought_yes,
                     mid_before=top.mid,
                     maker_entry=maker_entry,
+                    maker_leg_fee=maker_leg_fee,
+                    count_fp=event.count_fp,
                     price_bucket=bucket_price,
                     size_bucket=bucket_size,
                 )
@@ -268,6 +285,8 @@ class AdverseSelectionAnalysis:
                 taker_bought_yes=taker_bought_yes,
                 mid_before=top.mid,
                 maker_entry=maker_entry,
+                maker_leg_fee=maker_leg_fee,
+                count_fp=event.count_fp,
                 price_bucket=bucket_price,
                 size_bucket=bucket_size,
             )
