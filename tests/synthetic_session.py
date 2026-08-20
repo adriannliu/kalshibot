@@ -62,6 +62,7 @@ class SyntheticSession:
         floor_strike: Optional[str] = None,
         cap_strike: Optional[str] = None,
         mutually_exclusive: Optional[bool] = None,
+        event_market_count: int = 0,
     ) -> "SyntheticSession":
         self._markets.append(
             {
@@ -80,6 +81,7 @@ class SyntheticSession:
                 "floor_strike": floor_strike,
                 "cap_strike": cap_strike,
                 "mutually_exclusive": mutually_exclusive,
+                "event_market_count": event_market_count,
             }
         )
         return self

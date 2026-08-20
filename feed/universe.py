@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -58,6 +58,12 @@ class SelectedMarket:
     maker_multiplier: str
     taker_multiplier: str
     fee_regime: str
+    event_ticker: str = ""
+    strike_type: str = ""
+    floor_strike: str = ""
+    cap_strike: str = ""
+    mutually_exclusive: Optional[bool] = None
+    event_market_count: int = 0
 
 
 @dataclass
@@ -149,6 +155,24 @@ def _series_volume(record: Dict[str, Any]) -> int:
         return 0
 
 
+def _strike(record: Dict[str, Any], key: str) -> str:
+    value = record.get(key)
+    return "" if value is None else str(value)
+
+
+def fetch_event_index(client: RestClient, series_ticker: str) -> Dict[str, Dict[str, Any]]:
+    index: Dict[str, Dict[str, Any]] = {}
+    try:
+        records = client.events(series_ticker=series_ticker, with_nested_markets="false")
+    except Exception:
+        return index
+    for record in records:
+        ticker = record.get("event_ticker") or record.get("ticker")
+        if ticker:
+            index[str(ticker)] = record
+    return index
+
+
 def _market_volume(record: Dict[str, Any]) -> int:
     for key in ("volume_24h_fp", "volume_fp"):
         raw = record.get(key)
@@ -201,10 +225,15 @@ def resolve(client: RestClient, spec: UniverseSpec) -> UniverseResolution:
         schedule = fee_table.get(series_ticker)
         added = 0
         try:
-            records = client.markets(series_ticker=series_ticker, status=spec.selection.status)
+            records = list(client.markets(series_ticker=series_ticker, status=spec.selection.status))
             candidates = [r for r in records if market_passes(r, close_ceiling)]
         except Exception:
             return 0
+        events = fetch_event_index(client, series_ticker)
+        markets_per_event: Dict[str, int] = {}
+        for record in records:
+            key = str(record.get("event_ticker") or "")
+            markets_per_event[key] = markets_per_event.get(key, 0) + 1
         candidates.sort(key=_market_volume, reverse=True)
         for record in candidates:
             if added >= limit:
@@ -212,6 +241,8 @@ def resolve(client: RestClient, spec: UniverseSpec) -> UniverseResolution:
             ticker = record.get("ticker")
             if not ticker or ticker in chosen:
                 continue
+            event_ticker = str(record.get("event_ticker") or "")
+            event = events.get(event_ticker) or {}
             chosen[ticker] = SelectedMarket(
                 ticker=ticker,
                 series_ticker=series_ticker,
@@ -224,6 +255,12 @@ def resolve(client: RestClient, spec: UniverseSpec) -> UniverseResolution:
                 maker_multiplier=str(fee_table.maker_multiplier(series_ticker)),
                 taker_multiplier=str(fee_table.taker_multiplier(series_ticker)),
                 fee_regime=fee_table.regime(series_ticker),
+                event_ticker=event_ticker,
+                strike_type=str(record.get("strike_type") or ""),
+                floor_strike=_strike(record, "floor_strike"),
+                cap_strike=_strike(record, "cap_strike"),
+                mutually_exclusive=event.get("mutually_exclusive"),
+                event_market_count=markets_per_event.get(event_ticker, 0),
             )
             added += 1
         return added
@@ -353,8 +390,12 @@ def resolution_from_dict(data: Dict[str, Any]) -> UniverseResolution:
         )
         for ticker, body in (raw_table.get("schedules") or {}).items()
     }
+    known = {f.name for f in fields(SelectedMarket)}
     return UniverseResolution(
-        markets=[SelectedMarket(**m) for m in data.get("markets") or []],
+        markets=[
+            SelectedMarket(**{k: v for k, v in m.items() if k in known})
+            for m in data.get("markets") or []
+        ],
         fee_table=FeeScheduleTable(
             schedules=schedules,
             source=raw_table.get("source", ""),

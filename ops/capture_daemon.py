@@ -195,6 +195,12 @@ class CaptureDaemon:
                         "maker_multiplier": m.maker_multiplier,
                         "taker_multiplier": m.taker_multiplier,
                         "fee_regime": m.fee_regime,
+                        "event_ticker": m.event_ticker,
+                        "strike_type": m.strike_type,
+                        "floor_strike": m.floor_strike,
+                        "cap_strike": m.cap_strike,
+                        "mutually_exclusive": m.mutually_exclusive,
+                        "event_market_count": m.event_market_count,
                     }
                     for m in self._shard_markets
                 ],

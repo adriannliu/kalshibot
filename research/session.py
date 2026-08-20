@@ -46,6 +46,7 @@ class MarketMeta:
     floor_strike: Optional[Decimal]
     cap_strike: Optional[Decimal]
     mutually_exclusive: Optional[bool]
+    event_market_count: int
 
     def maker_pair_fee(self, yes_price: Decimal, no_price: Decimal) -> Decimal:
         return self.maker_multiplier * exchange.MAKER_FEE_RATE * (
@@ -71,6 +72,7 @@ UNKNOWN_MARKET_FIELDS = {
     "floor_strike": None,
     "cap_strike": None,
     "mutually_exclusive": None,
+    "event_market_count": 0,
 }
 
 
@@ -107,6 +109,7 @@ def market_meta_from_manifest(entry: Dict[str, Any]) -> MarketMeta:
         floor_strike=_decimal_or_none(entry.get("floor_strike")),
         cap_strike=_decimal_or_none(entry.get("cap_strike")),
         mutually_exclusive=entry.get("mutually_exclusive"),
+        event_market_count=int(entry.get("event_market_count") or 0),
     )
 
 

@@ -53,6 +53,7 @@ ENDPOINT_LIMITS = "/account/limits"
 ENDPOINT_ENDPOINT_COSTS = "/account/endpoint_costs"
 ENDPOINT_FEE_TIERS = "/margin/fee_tiers"
 ENDPOINT_MARKETS = "/markets"
+ENDPOINT_EVENTS = "/events"
 ENDPOINT_ORDERBOOK = "/markets/{ticker}/orderbook"
 
 
@@ -111,6 +112,15 @@ REGIME_MAKER_CHARGED = "maker_charged"
 REGIME_MAKER_FREE = "maker_free"
 REGIME_ZERO_FEE = "zero_fee"
 REGIME_ANY = "any"
+
+STRIKE_TYPE_GREATER = "greater"
+STRIKE_TYPE_GREATER_OR_EQUAL = "greater_or_equal"
+STRIKE_TYPE_LESS = "less"
+STRIKE_TYPE_LESS_OR_EQUAL = "less_or_equal"
+
+STRIKE_TYPES_ABOVE = frozenset({STRIKE_TYPE_GREATER, STRIKE_TYPE_GREATER_OR_EQUAL})
+STRIKE_TYPES_BELOW = frozenset({STRIKE_TYPE_LESS, STRIKE_TYPE_LESS_OR_EQUAL})
+STRIKE_TYPES_LADDERED = STRIKE_TYPES_ABOVE | STRIKE_TYPES_BELOW
 
 
 @dataclass(frozen=True)

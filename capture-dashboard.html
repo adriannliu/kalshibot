@@ -1,0 +1,168 @@
+<title>Kalshi Capture Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F4F6F9; --surface:#FFFFFF; --surface-2:#EDF1F6;
+  --ink:#10151F; --body:#39424F; --muted:#5A6474; --faint:#8A93A2;
+  --rule:#DDE3EB; --rule-strong:#C3CCD8;
+  --accent:#0B7285; --accent-soft:#E0F0F3;
+  --good:#1F7A3D; --good-soft:#E3F3E8;
+  --warn:#9A5B06; --warn-soft:#FBEEDB;
+  --bad:#B02020;  --bad-soft:#FAE6E6;
+  --shadow:0 1px 2px rgba(16,21,31,.06),0 8px 24px rgba(16,21,31,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C1016; --surface:#141A23; --surface-2:#1B222D;
+    --ink:#EEF2F7; --body:#C3CCD8; --muted:#98A3B2; --faint:#6E7988;
+    --rule:#242D3A; --rule-strong:#33404F;
+    --accent:#4FC3D4; --accent-soft:#12303A;
+    --good:#5FD08A; --good-soft:#12301F;
+    --warn:#E5A94F; --warn-soft:#332507;
+    --bad:#F08B8B;  --bad-soft:#331616;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C1016; --surface:#141A23; --surface-2:#1B222D;
+  --ink:#EEF2F7; --body:#C3CCD8; --muted:#98A3B2; --faint:#6E7988;
+  --rule:#242D3A; --rule-strong:#33404F;
+  --accent:#4FC3D4; --accent-soft:#12303A;
+  --good:#5FD08A; --good-soft:#12301F;
+  --warn:#E5A94F; --warn-soft:#332507;
+  --bad:#F08B8B;  --bad-soft:#331616;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:32px}
+h1,h2,h3{font-family:Archivo,ui-sans-serif,system-ui,sans-serif; color:var(--ink); margin:0; text-wrap:balance}
+h1{font-size:31px; font-weight:700; letter-spacing:-.02em}
+h2{font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.10em; color:var(--muted)}
+h3{font-size:17px; font-weight:600; letter-spacing:-.01em}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums}
+header .sub{color:var(--muted); font-size:14px; margin-top:6px}
+header .sub b{color:var(--body); font-weight:600}
+.verdict{
+  display:flex; gap:18px; align-items:flex-start; padding:20px 22px;
+  border-radius:10px; border:1px solid var(--rule); background:var(--surface);
+  box-shadow:var(--shadow); border-left:4px solid var(--v);
+}
+.verdict.ok{--v:var(--good)} .verdict.warn{--v:var(--warn)} .verdict.bad{--v:var(--bad)}
+.verdict .big{font-family:Archivo,sans-serif; font-size:20px; font-weight:700; color:var(--ink); letter-spacing:-.01em}
+.verdict p{margin:6px 0 0; color:var(--muted); font-size:14px; max-width:68ch}
+.grid{display:grid; gap:14px}
+.g4{grid-template-columns:repeat(auto-fit,minmax(216px,1fr))}
+.g2{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))}
+.tile{
+  background:var(--surface); border:1px solid var(--rule); border-radius:10px;
+  padding:16px 18px; border-left:3px solid var(--s); display:flex; flex-direction:column; gap:6px;
+}
+.tile.ok{--s:var(--good)} .tile.warn{--s:var(--warn)} .tile.bad{--s:var(--bad)} .tile.idle{--s:var(--rule-strong)}
+.tile .label{font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--faint); font-weight:600}
+.tile .value{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:23px; color:var(--ink); font-weight:500; line-height:1.2}
+.tile .note{font-size:12.5px; color:var(--muted)}
+.pill{
+  display:inline-flex; align-items:center; gap:6px; align-self:flex-start;
+  font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+  padding:3px 9px; border-radius:999px;
+}
+.pill.ok{background:var(--good-soft); color:var(--good)}
+.pill.warn{background:var(--warn-soft); color:var(--warn)}
+.pill.bad{background:var(--bad-soft); color:var(--bad)}
+.pill.idle{background:var(--surface-2); color:var(--muted)}
+.panel{background:var(--surface); border:1px solid var(--rule); border-radius:12px; box-shadow:var(--shadow); overflow:hidden}
+.panel > .head{
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:15px 20px; border-bottom:1px solid var(--rule); background:var(--surface-2);
+}
+.panel > .head .where{font-size:12px; color:var(--muted)}
+.panel .body{padding:6px 20px 16px}
+.row{display:flex; justify-content:space-between; align-items:baseline; gap:16px; padding:9px 0; border-bottom:1px solid var(--rule)}
+.row:last-child{border-bottom:0}
+.row .k{color:var(--muted); font-size:13.5px}
+.row .v{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; color:var(--ink); font-size:14px; text-align:right}
+.row .v.good{color:var(--good)} .row .v.warn{color:var(--warn)} .row .v.bad{color:var(--bad)}
+.bar{height:5px; border-radius:3px; background:var(--surface-2); overflow:hidden; margin-top:9px}
+.bar > i{display:block; height:100%; background:var(--f); border-radius:3px}
+.bar.ok{--f:var(--good)} .bar.warn{--f:var(--warn)} .bar.bad{--f:var(--bad)}
+table{width:100%; border-collapse:collapse; font-size:13.5px}
+th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--rule-strong)}
+td{padding:8px 10px; border-bottom:1px solid var(--rule); color:var(--body)}
+td.n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; text-align:right; color:var(--ink)}
+tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+pre{
+  margin:0; background:var(--surface-2); border:1px solid var(--rule); border-radius:8px;
+  padding:14px 16px; overflow-x:auto; font-family:"IBM Plex Mono",monospace; font-size:13px;
+  color:var(--ink); line-height:1.7;
+}
+pre .c{color:var(--faint)}
+.note-block{font-size:13.5px; color:var(--muted); max-width:74ch}
+.note-block strong{color:var(--ink); font-weight:600}
+footer{border-top:1px solid var(--rule); padding-top:18px; color:var(--faint); font-size:12.5px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Kalshi Capture Watch</h1>
+    <div class="sub">Phase 1 read-only capture &middot; <b>492 markets</b> captured independently at <b>2 sites</b> &middot; generated 2026-08-20 20:00:43 UTC</div>
+  </header>
+
+  <div class="verdict ok">
+    <div><div class="big">Capture is healthy — 0.02 of 14 days banked</div><p>All four Phase 1 exit criteria are on track. The clock resets only if capture stops for more than 10 minutes, so the thing to protect is continuity, not throughput. Note: compression has not run yet, so the disk projection below is raw-only and will improve roughly twelvefold once the first segments pass two hours old.</p></div>
+  </div>
+
+  <section>
+    <h2>Phase 1 exit criteria</h2>
+    <div class="grid g4" style="margin-top:12px"><div class="tile idle"><span class="label">Consecutive days</span><span class="value">0.02</span><span class="note">need 14 — longest unbroken span</span></div><div class="tile ok"><span class="label">Gapped fraction</span><span class="value">0.00027</span><span class="note">gate is &lt; 0.001 — worst site</span></div><div class="tile ok"><span class="label">Integrity errors</span><span class="value">0</span><span class="note">any value above zero is a bug</span></div><div class="tile warn"><span class="label">Disk headroom</span><span class="value">4.5 d</span><span class="note">until the fuller volume is full — before compression</span></div></div>
+  </section>
+
+  <section>
+    <h2>Sites</h2>
+    <div class="grid g2" style="margin-top:12px"><div class="panel"><div class="head"><div><h3>use1</h3><div class="where mono">us-east-1 &middot; 54.237.196.22</div></div><span class="pill ok">capturing</span></div><div class="body"><div class="row"><span class="k">Uptime (longest shard)</span><span class="v">30m</span></div><div class="row"><span class="k">Shards</span><span class="v">4</span></div><div class="row"><span class="k">Markets tracked</span><span class="v">492</span></div><div class="row"><span class="k">Gapped fraction</span><span class="v good">0.00008</span></div><div class="row"><span class="k">Sequence gaps / hour</span><span class="v">24.0</span></div><div class="row"><span class="k">Reconnects</span><span class="v">0</span></div><div class="row"><span class="k">Integrity errors</span><span class="v good">0</span></div><div class="row"><span class="k">Clock offset p50 / p95 / p99</span><span class="v">11 / 25 / 683 ms</span></div><div class="row"><span class="k">Orderbook deltas</span><span class="v">2,062,814</span></div><div class="row"><span class="k">Trades</span><span class="v">43,383</span></div><div class="row"><span class="k">Capture on disk</span><span class="v">831.6 MB raw + 0.0 B gz (0% packed)</span></div><div class="row"><span class="k">Growth</span><span class="v">38.9 GB / day</span></div><div class="row"><span class="k">Volume used</span><span class="v">4.5 GB of 199.9 GB (2.2%)</span></div><div class="row"><span class="k">Days until full</span><span class="v bad">5.0</span></div><div class="bar ok"><i style="width:2.2%"></i></div></div></div><div class="panel"><div class="head"><div><h3>usw2</h3><div class="where mono">us-west-2 &middot; 54.189.34.99</div></div><span class="pill ok">capturing</span></div><div class="body"><div class="row"><span class="k">Uptime (longest shard)</span><span class="v">26m</span></div><div class="row"><span class="k">Shards</span><span class="v">4</span></div><div class="row"><span class="k">Markets tracked</span><span class="v">492</span></div><div class="row"><span class="k">Gapped fraction</span><span class="v good">0.00027</span></div><div class="row"><span class="k">Sequence gaps / hour</span><span class="v">13.8</span></div><div class="row"><span class="k">Reconnects</span><span class="v">0</span></div><div class="row"><span class="k">Integrity errors</span><span class="v good">0</span></div><div class="row"><span class="k">Clock offset p50 / p95 / p99</span><span class="v">29 / 37 / 666 ms</span></div><div class="row"><span class="k">Orderbook deltas</span><span class="v">1,942,304</span></div><div class="row"><span class="k">Trades</span><span class="v">38,526</span></div><div class="row"><span class="k">Capture on disk</span><span class="v">796.4 MB raw + 0.0 B gz (0% packed)</span></div><div class="row"><span class="k">Growth</span><span class="v">43.0 GB / day</span></div><div class="row"><span class="k">Volume used</span><span class="v">4.7 GB of 199.9 GB (2.3%)</span></div><div class="row"><span class="k">Days until full</span><span class="v bad">4.5</span></div><div class="bar ok"><i style="width:2.3%"></i></div></div></div></div>
+  </section>
+
+  <section>
+    <h2>Criterion detail</h2>
+    <div class="panel" style="margin-top:12px"><div class="scroll"><table>
+      <thead><tr><th>Criterion</th><th>State</th><th style="text-align:right">Detail</th></tr></thead>
+      <tbody><tr><td>capture duration</td><td><span class='pill idle'>pending</span></td><td class='n'>{&quot;consecutive_days&quot;: 0.02085609893280047, &quot;total_covered_days&quot;: 0.02085609893280047, &quot;required&quot;: 14, &quot;contiguous_spans&quot;:</td></tr><tr><td>gapped state fraction</td><td><span class='pill ok'>pass</span></td><td class='n'>{&quot;fraction&quot;: 8.353585742126934e-05, &quot;max&quot;: 0.001}</td></tr><tr><td>offline reconstruction</td><td><span class='pill idle'>pending</span></td><td class='n'>{&quot;failed_sessions&quot;: [], &quot;sessions&quot;: 4}</td></tr><tr><td>clock offset characterized</td><td><span class='pill idle'>pending</span></td><td class='n'>{&quot;sessions_with_offset_samples&quot;: 0}</td></tr></tbody>
+    </table></div></div>
+  </section>
+
+  <section>
+    <h2>There is no trading kill switch, and that is deliberate</h2>
+    <p class="note-block" style="margin-top:12px">This system is <strong>read-only</strong>. It has no execution engine, no order
+    state machine, and no position — so there is nothing to halt and no capital to protect. The safeguard is structural:
+    <code>tests/test_layering.py</code> fails the build if any module in the trading path gains an order-submission call site.
+    The kill switches in &sect;7 of the north star — stale feed, position mismatch, inventory breach, daily P&amp;L floor,
+    sustained 429s — get built in <strong>Phase 5</strong>, against a demo account, behind chaos testing. Building them now would
+    imply the system is safe to trade before Phase 2 has said whether an edge exists at all.</p>
+  </section>
+
+  <section>
+    <h2>Controls</h2>
+    <pre style="margin-top:12px"><span class="c"># stop capture at one site (data is preserved)</span>
+ssh ec2-user@HOST 'sudo systemctl stop kalshi-capture@{0,1,2,3}'
+
+<span class="c"># start it again — books rebuild from fresh snapshots</span>
+ssh ec2-user@HOST 'sudo systemctl start kalshi-capture@{0,1,2,3}'
+
+<span class="c"># refresh this dashboard</span>
+.venv/bin/python -m ops.dashboard --out capture-dashboard.html
+
+<span class="c"># full verification: replay every book and compare to live digests</span>
+ssh ec2-user@HOST 'cd ~/kalshibot &amp;&amp; ./.venv/bin/python -m research.phase1_report --data-root data'</pre>
+  </section>
+
+  <footer>Snapshot, not live &mdash; re-run <span class="mono">.venv/bin/python -m ops.dashboard</span> to refresh. Phase 2 is a GO/NO-GO gate; do not build the bot until it passes.</footer>
+</div>

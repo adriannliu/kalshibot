@@ -100,6 +100,9 @@ class RestClient:
     def markets(self, **params: Any) -> Iterator[Dict[str, Any]]:
         return self.paginate(exchange.ENDPOINT_MARKETS, "markets", params)
 
+    def events(self, **params: Any) -> Iterator[Dict[str, Any]]:
+        return self.paginate(exchange.ENDPOINT_EVENTS, "events", params)
+
     def orderbook(self, ticker: str, depth: int = 0) -> Dict[str, Any]:
         endpoint = exchange.ENDPOINT_ORDERBOOK.format(ticker=urllib.parse.quote(ticker, safe=""))
         return self.get(endpoint, {"depth": depth} if depth else None)
