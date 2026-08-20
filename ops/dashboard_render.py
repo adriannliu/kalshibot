@@ -375,13 +375,13 @@ ssh ec2-user@HOST 'sudo systemctl stop kalshi-capture@{0,1,2,3}'
 ssh ec2-user@HOST 'sudo systemctl start kalshi-capture@{0,1,2,3}'
 
 <span class="c"># refresh this dashboard</span>
-python -m ops.dashboard --out capture-dashboard.html
+.venv/bin/python -m ops.dashboard --out capture-dashboard.html
 
 <span class="c"># full verification: replay every book and compare to live digests</span>
 ssh ec2-user@HOST 'cd ~/kalshibot &amp;&amp; ./.venv/bin/python -m research.phase1_report --data-root data'</pre>
   </section>
 
-  <footer>Snapshot, not live &mdash; re-run <span class="mono">python -m ops.dashboard</span> to refresh. Phase 2 is a GO/NO-GO gate; do not build the bot until it passes.</footer>
+  <footer>Snapshot, not live &mdash; re-run <span class="mono">.venv/bin/python -m ops.dashboard</span> to refresh. Phase 2 is a GO/NO-GO gate; do not build the bot until it passes.</footer>
 </div>
 """ % (CSS, markets, len(sites), _esc(stamp), verdict_cls, _esc(headline), _esc(detail),
        tiles, "".join(panels), "".join(crit_html))

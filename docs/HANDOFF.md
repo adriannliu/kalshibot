@@ -68,7 +68,7 @@ Systemd units, the daily universe refresh, and the hourly compressor are describ
 Run this, do not guess:
 
 ```bash
-python -m ops.dashboard --out capture-dashboard.html   # both sites, one page
+.venv/bin/python -m ops.dashboard --out capture-dashboard.html   # both sites, one page
 ssh ec2-user@<ip> 'cd ~/kalshibot && ./.venv/bin/python -m research.phase1_report --data-root data'
 ```
 
@@ -146,7 +146,7 @@ granularity as written.
 1. **Do nothing for 14 days except watch.** Check the dashboard daily. The single most
    valuable thing is not interrupting the clock.
 2. **Verify byte-identical replay** on a real session before trusting the corpus:
-   `python -m research.replay data/<session-id>`. It exits nonzero on any digest
+   `.venv/bin/python -m research.replay data/<session-id>`. It exits nonzero on any digest
    mismatch. Do this early — if reconstruction is broken, better to know on day 2.
 3. **Confirm compression** after ~3 hours (see §5).
 4. **At 14 days:** merge both sites into one tree, run `research/phase1_report.py`,

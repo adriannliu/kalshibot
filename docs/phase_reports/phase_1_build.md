@@ -161,7 +161,7 @@ maker-charged series, which is precisely the half of the exchange §2 predicts i
 structurally unprofitable. Phase 2 would then have analysed only the markets that
 cannot work and concluded there is no edge.
 
-Resolved universe as of 2026-08-20, from `python -m ops.preflight`:
+Resolved universe as of 2026-08-20, from `.venv/bin/python -m ops.preflight`:
 
 | Stratum | Markets | Regime |
 |---|---|---|
@@ -204,8 +204,8 @@ export KALSHI_API_KEY_ID=...
 export KALSHI_PRIVATE_KEY_PATH=/path/to/key.pem
 export KALSHI_ENV=demo
 
-python -m ops.preflight
-python -m ops.capture_cli --data-root data
-python -m research.replay data/<session-id>
-python -m research.phase1_report --data-root data
+.venv/bin/python -m ops.preflight
+.venv/bin/python -m ops.capture_cli --data-root data
+.venv/bin/python -m research.replay data/<session-id>
+.venv/bin/python -m research.phase1_report --data-root data
 ```

@@ -8,6 +8,8 @@ Kalshi market making research. Governed by [KALSHI_MM_NORTH_STAR.md](KALSHI_MM_N
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# every command below uses .venv/bin/python -- the deps live only in the venv,
+# and macOS has no bare `python` on PATH
 export KALSHI_API_KEY_ID=...
 export KALSHI_PRIVATE_KEY_PATH=/path/to/key.pem
 export KALSHI_ENV=demo          # or prod
@@ -19,11 +21,11 @@ Secrets come from the environment only. Never commit a key.
 
 | Command | Purpose |
 |---|---|
-| `python -m ops.preflight` | Check credentials, rate limits, and resolve the market universe. Run before capture. |
-| `python -m ops.capture_cli --data-root data` | Run the capture daemon. Ctrl-C stops cleanly. |
-| `python -m research.replay data/<session-id>` | Rebuild books offline and verify against live digests. Exit 0 means byte-identical. |
-| `python -m research.phase1_report --data-root data` | Evaluate all four Phase 1 exit criteria. Exit 0 means the gate passes. |
-| `python -m pytest` | Test suite, including an end-to-end capture-and-replay proof. |
+| `.venv/bin/python -m ops.preflight` | Check credentials, rate limits, and resolve the market universe. Run before capture. |
+| `.venv/bin/python -m ops.capture_cli --data-root data` | Run the capture daemon. Ctrl-C stops cleanly. |
+| `.venv/bin/python -m research.replay data/<session-id>` | Rebuild books offline and verify against live digests. Exit 0 means byte-identical. |
+| `.venv/bin/python -m research.phase1_report --data-root data` | Evaluate all four Phase 1 exit criteria. Exit 0 means the gate passes. |
+| `.venv/bin/python -m pytest` | Test suite, including an end-to-end capture-and-replay proof. |
 
 ## Layout
 
