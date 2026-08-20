@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh Kalshi market universe and cycle capture shards
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/kalshibot
+EnvironmentFile=/home/ec2-user/.kalshi/env
+ExecStart=/home/ec2-user/kalshibot/deploy/refresh-universe.sh

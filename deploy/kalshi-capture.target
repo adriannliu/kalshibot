@@ -1,0 +1,6 @@
+[Unit]
+Description=All Kalshi Phase 1 capture shards
+StopWhenUnneeded=no
+
+[Install]
+WantedBy=multi-user.target

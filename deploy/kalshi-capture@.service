@@ -1,0 +1,26 @@
+[Unit]
+Description=Kalshi Phase 1 capture shard %i
+After=network-online.target chronyd.service
+Wants=network-online.target
+PartOf=kalshi-capture.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/kalshibot
+EnvironmentFile=/home/ec2-user/.kalshi/env
+ExecStart=/home/ec2-user/kalshibot/.venv/bin/python -m ops.capture_cli \
+    --data-root /home/ec2-user/kalshibot/data \
+    --universe-file /home/ec2-user/kalshibot/data/universe.json \
+    --shard-index %i \
+    --shard-count 4 \
+    --site ${KALSHI_SITE}
+Restart=always
+RestartSec=10
+TimeoutStopSec=90
+KillSignal=SIGTERM
+StandardOutput=append:/home/ec2-user/kalshibot/data/shard%i.out
+StandardError=append:/home/ec2-user/kalshibot/data/shard%i.err
+
+[Install]
+WantedBy=kalshi-capture.target

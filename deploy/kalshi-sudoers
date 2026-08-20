@@ -1,0 +1,1 @@
+ec2-user ALL=(root) NOPASSWD: /usr/bin/systemctl restart kalshi-capture@0.service, /usr/bin/systemctl restart kalshi-capture@1.service, /usr/bin/systemctl restart kalshi-capture@2.service, /usr/bin/systemctl restart kalshi-capture@3.service

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Kalshi universe refresh
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
