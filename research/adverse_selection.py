@@ -336,9 +336,15 @@ def analyze_session(
 def merge_markets(
     analyses: Iterable[AdverseSelectionAnalysis],
 ) -> Dict[str, MarketAdverseSelection]:
+    return merge_market_stats(analysis.markets for analysis in analyses)
+
+
+def merge_market_stats(
+    tables: Iterable[Dict[str, MarketAdverseSelection]],
+) -> Dict[str, MarketAdverseSelection]:
     merged: Dict[str, MarketAdverseSelection] = {}
-    for analysis in analyses:
-        for ticker, stats in analysis.markets.items():
+    for table in tables:
+        for ticker, stats in table.items():
             existing = merged.get(ticker)
             if existing is None:
                 existing = MarketAdverseSelection(ticker=ticker, meta=stats.meta)

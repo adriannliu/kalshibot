@@ -50,8 +50,8 @@ def test_a_market_capturing_spread_with_no_drift_qualifies(tmp_path):
     analysis = analyze_session(directory)
 
     verdicts = build_verdicts(
-        analysis.microstructure.markets,
-        analysis.adverse.markets,
+        analysis.markets,
+        analysis.adverse_markets,
         horizon="10s",
         min_quotable_hours=0.0,
     )
@@ -69,7 +69,7 @@ def test_a_market_with_too_few_trades_is_blocked_not_silently_included(tmp_path)
     analysis = analyze_session(directory)
 
     verdict = build_verdicts(
-        analysis.microstructure.markets, analysis.adverse.markets, horizon="10s"
+        analysis.markets, analysis.adverse_markets, horizon="10s"
     )[0]
 
     assert not verdict.qualifies
@@ -96,8 +96,8 @@ def test_maker_fees_can_flip_a_market_from_qualifying_to_blocked(tmp_path):
         session.advance(60.0).delta("TEST-A", "yes", "0.3000", "1.00")
         analysis = analyze_session(session.write())
         return build_verdicts(
-            analysis.microstructure.markets,
-            analysis.adverse.markets,
+            analysis.markets,
+            analysis.adverse_markets,
             horizon="10s",
             min_quotable_hours=0.0,
         )[0]
@@ -195,3 +195,18 @@ def test_report_is_json_serializable(tmp_path):
     busy_session(tmp_path, "one", trades=5)
     report = evaluate(str(tmp_path))
     assert json.loads(json.dumps(report, default=str))["phase2_gate_met"] is False
+
+
+def test_parallel_evaluation_matches_serial_exactly(tmp_path):
+    import json
+
+    for index in range(3):
+        busy_session(tmp_path, "shard%d" % index, ticker="TEST-%d" % index, trades=20)
+
+    serial = evaluate(str(tmp_path), jobs=1)
+    parallel = evaluate(str(tmp_path), jobs=3)
+
+    assert json.dumps(serial, default=str, sort_keys=True) == json.dumps(
+        parallel, default=str, sort_keys=True
+    )
+    assert serial["sites"]["use1"]["sessions"] == 3

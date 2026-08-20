@@ -450,8 +450,14 @@ def scan_session(session_dir: str) -> ConstraintScanner:
 
 
 def merge_scanners(scanners: Iterable[ConstraintScanner]) -> Dict[str, ViolationStats]:
+    return merge_violation_stats(scanner.stats for scanner in scanners)
+
+
+def merge_violation_stats(
+    tables: Iterable[Dict[str, ViolationStats]],
+) -> Dict[str, ViolationStats]:
     merged: Dict[str, ViolationStats] = {k: ViolationStats(kind=k) for k in ALL_KINDS}
-    for scanner in scanners:
-        for kind, stats in scanner.stats.items():
-            merged[kind].merge(stats)
+    for table in tables:
+        for kind, stats in table.items():
+            merged.setdefault(kind, ViolationStats(kind=kind)).merge(stats)
     return merged

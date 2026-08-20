@@ -333,9 +333,15 @@ def analyze_session(session_dir: str) -> MicrostructureAnalysis:
 def merge_markets(
     analyses: Iterable[MicrostructureAnalysis],
 ) -> Dict[str, MarketMicrostructure]:
+    return merge_market_stats(analysis.markets for analysis in analyses)
+
+
+def merge_market_stats(
+    tables: Iterable[Dict[str, MarketMicrostructure]],
+) -> Dict[str, MarketMicrostructure]:
     merged: Dict[str, MarketMicrostructure] = {}
-    for analysis in analyses:
-        for ticker, stats in analysis.markets.items():
+    for table in tables:
+        for ticker, stats in table.items():
             existing = merged.get(ticker)
             if existing is None:
                 merged[ticker] = MarketMicrostructure(ticker=ticker, meta=stats.meta)

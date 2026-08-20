@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -28,13 +30,16 @@ def cents(value: Optional[Decimal]) -> Optional[str]:
 
 
 @dataclass
-class SessionAnalyses:
+class SessionResult:
     directory: str
-    meta: SessionMeta
-    microstructure: micro.MicrostructureAnalysis
-    adverse: adverse.AdverseSelectionAnalysis
-    constraints: constraint_module.ConstraintScanner
+    site: str
     started_at_ms: Optional[int]
+    markets: Dict[str, micro.MarketMicrostructure]
+    adverse_markets: Dict[str, adverse.MarketAdverseSelection]
+    violations: Dict[str, constraint_module.ViolationStats]
+    constraint_coverage: Dict[str, Any]
+    ws_messages: int
+    gaps: int
 
 
 def analyze_session(
@@ -42,7 +47,7 @@ def analyze_session(
     horizons: Sequence[int] = adverse.DEFAULT_HORIZONS_S,
     settlements: Optional[Dict[str, Decimal]] = None,
     scan_constraints: bool = True,
-) -> SessionAnalyses:
+) -> SessionResult:
     stream = SessionStream(session_dir)
     structure = micro.MicrostructureAnalysis(stream.meta)
     selection = adverse.AdverseSelectionAnalysis(
@@ -61,14 +66,24 @@ def analyze_session(
     selection.finish(last)
     scanner.finish(last)
 
-    return SessionAnalyses(
+    return SessionResult(
         directory=session_dir,
-        meta=stream.meta,
-        microstructure=structure,
-        adverse=selection,
-        constraints=scanner,
+        site=stream.meta.site or "unlabelled",
         started_at_ms=stream.meta.started_at_ms,
+        markets=structure.markets,
+        adverse_markets=selection.markets,
+        violations=scanner.stats,
+        constraint_coverage=scanner.coverage(),
+        ws_messages=stream.stats.ws_messages,
+        gaps=stream.stats.gaps,
     )
+
+
+def _analyze_for_pool(session_dir: str) -> Tuple[str, Optional[SessionResult], Optional[str]]:
+    try:
+        return session_dir, analyze_session(session_dir), None
+    except SessionIncompatible as error:
+        return session_dir, None, str(error)
 
 
 @dataclass
@@ -183,8 +198,8 @@ def projected_weekly_dollars(
 
 
 def assign_windows(
-    analyses: Sequence[SessionAnalyses], windows: int
-) -> List[List[SessionAnalyses]]:
+    analyses: Sequence[SessionResult], windows: int
+) -> List[List[SessionResult]]:
     stamped = [a for a in analyses if a.started_at_ms is not None]
     if windows < 2 or len(stamped) < 2:
         return [list(analyses)]
@@ -216,14 +231,14 @@ def _overlap(left: Sequence[str], right: Sequence[str]) -> float:
 
 
 def evaluate_site(
-    analyses: Sequence[SessionAnalyses],
+    analyses: Sequence[SessionResult],
     horizon: str = DEFAULT_HORIZON,
     capture_share: Decimal = DEFAULT_CAPTURE_SHARE,
     min_weekly_dollars: Decimal = DEFAULT_MIN_WEEKLY_DOLLARS,
     windows: int = DEFAULT_WINDOWS,
 ) -> Dict[str, Any]:
-    structure = micro.merge_markets(a.microstructure for a in analyses)
-    selection = adverse.merge_markets(a.adverse for a in analyses)
+    structure = micro.merge_market_stats(a.markets for a in analyses)
+    selection = adverse.merge_market_stats(a.adverse_markets for a in analyses)
     verdicts = build_verdicts(structure, selection, horizon=horizon)
     qualifying = _qualifying(verdicts)
     weekly = projected_weekly_dollars(verdicts, capture_share)
@@ -233,8 +248,8 @@ def evaluate_site(
         if not bucket:
             window_sets.append({"window": index, "sessions": 0, "qualifying": []})
             continue
-        window_structure = micro.merge_markets(a.microstructure for a in bucket)
-        window_selection = adverse.merge_markets(a.adverse for a in bucket)
+        window_structure = micro.merge_market_stats(a.markets for a in bucket)
+        window_selection = adverse.merge_market_stats(a.adverse_markets for a in bucket)
         window_verdicts = build_verdicts(
             window_structure,
             window_selection,
@@ -258,7 +273,7 @@ def evaluate_site(
     )
     stable = len(populated) >= 2 and overlap >= MIN_WINDOW_OVERLAP
 
-    violations = constraint_module.merge_scanners(a.constraints for a in analyses)
+    violations = constraint_module.merge_violation_stats(a.violations for a in analyses)
 
     criteria = [
         {
@@ -317,6 +332,25 @@ def evaluate_site(
     }
 
 
+def _collect(root: str, jobs: int) -> Tuple[List[SessionResult], List[Dict[str, str]]]:
+    directories = session_dirs(root)
+    results: List[SessionResult] = []
+    skipped: List[Dict[str, str]] = []
+
+    if jobs > 1 and len(directories) > 1:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            outcomes = pool.map(_analyze_for_pool, directories)
+    else:
+        outcomes = (_analyze_for_pool(d) for d in directories)
+
+    for directory, result, reason in outcomes:
+        if result is None:
+            skipped.append({"directory": directory, "reason": reason or "unknown"})
+        else:
+            results.append(result)
+    return results, skipped
+
+
 def evaluate(
     root: str,
     horizon: str = DEFAULT_HORIZON,
@@ -324,20 +358,14 @@ def evaluate(
     min_weekly_dollars: Decimal = DEFAULT_MIN_WEEKLY_DOLLARS,
     windows: int = DEFAULT_WINDOWS,
     site: Optional[str] = None,
+    jobs: int = 1,
 ) -> Dict[str, Any]:
-    by_site: Dict[str, List[SessionAnalyses]] = {}
-    skipped: List[Dict[str, str]] = []
-
-    for directory in session_dirs(root):
-        try:
-            analysis = analyze_session(directory)
-        except SessionIncompatible as error:
-            skipped.append({"directory": directory, "reason": str(error)})
+    results, skipped = _collect(root, jobs)
+    by_site: Dict[str, List[SessionResult]] = {}
+    for result in results:
+        if site is not None and result.site != site:
             continue
-        label = analysis.meta.site or "unlabelled"
-        if site is not None and label != site:
-            continue
-        by_site.setdefault(label, []).append(analysis)
+        by_site.setdefault(result.site, []).append(result)
 
     sites = {
         label: evaluate_site(
@@ -381,6 +409,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--min-weekly-dollars", default=str(DEFAULT_MIN_WEEKLY_DOLLARS))
     parser.add_argument("--windows", type=int, default=DEFAULT_WINDOWS)
     parser.add_argument("--site")
+    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     args = parser.parse_args(argv)
 
     report = evaluate(
@@ -390,6 +419,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         min_weekly_dollars=Decimal(args.min_weekly_dollars),
         windows=args.windows,
         site=args.site,
+        jobs=args.jobs,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["phase2_gate_met"] else 1
