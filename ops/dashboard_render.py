@@ -180,11 +180,23 @@ def render(sites: List[Dict[str, Any]]) -> str:
          if s.get("projection") and s["projection"].get("days_until_full")),
         default=None,
     )
-    markets = sum(s["scan"]["markets_tracked"] for s in live if s.get("scan"))
+    markets = max((s["scan"]["markets_tracked"] for s in live if s.get("scan")), default=0)
     unreachable = [s for s in sites if not s.get("reachable")]
 
+    compression_seen = any(s["disk"]["segments_compressed"] > 0 for s in live if s.get("disk"))
+    youngest_uptime = min(
+        (s["scan"]["uptime_seconds"] for s in live if s.get("scan")), default=0.0
+    )
+    compression_due = youngest_uptime > 3 * 3600
+
     gap_state = "ok" if worst_gapped < GATE_GAPPED else "bad"
-    disk_state = "ok" if (soonest_full or 999) > REQUIRED_DAYS else "bad"
+    disk_ample = (soonest_full or 999) > REQUIRED_DAYS
+    if disk_ample:
+        disk_state = "ok"
+    elif compression_seen or compression_due:
+        disk_state = "bad"
+    else:
+        disk_state = "warn"
     integ_state = "ok" if integrity == 0 else "bad"
     days_state = "ok" if consecutive >= REQUIRED_DAYS else "idle"
 
@@ -195,8 +207,15 @@ def render(sites: List[Dict[str, Any]]) -> str:
         blocking.append("gapped fraction above the 0.1%% gate")
     if integrity:
         blocking.append("%d integrity error(s)" % integrity)
-    if soonest_full is not None and soonest_full <= REQUIRED_DAYS:
+    if soonest_full is not None and soonest_full <= REQUIRED_DAYS and disk_state == "bad":
         blocking.append("disk fills in %.1f days, before the 14-day mark" % soonest_full)
+
+    pending = []
+    if not compression_seen and not compression_due:
+        pending.append(
+            "compression has not run yet, so the disk projection below is raw-only and will "
+            "improve roughly twelvefold once the first segments pass two hours old"
+        )
 
     if blocking:
         verdict_cls = "bad" if (unreachable or integrity or worst_gapped >= GATE_GAPPED) else "warn"
@@ -209,12 +228,20 @@ def render(sites: List[Dict[str, Any]]) -> str:
             "All four Phase 1 exit criteria are on track. The clock resets only if capture "
             "stops for more than 10 minutes, so the thing to protect is continuity, not throughput."
         )
+    if pending:
+        detail += " Note: " + "; ".join(pending) + "."
 
     tiles = "".join([
         _tile("Consecutive days", "%.2f" % consecutive, "need %d — longest unbroken span" % REQUIRED_DAYS, days_state),
         _tile("Gapped fraction", "%.5f" % worst_gapped, "gate is < %.3f — worst site" % GATE_GAPPED, gap_state),
         _tile("Integrity errors", str(integrity), "any value above zero is a bug", integ_state),
-        _tile("Disk headroom", ("%.1f d" % soonest_full) if soonest_full else "—", "until the fuller volume is full", disk_state),
+        _tile(
+            "Disk headroom",
+            ("%.1f d" % soonest_full) if soonest_full else "—",
+            "until the fuller volume is full"
+            + ("" if compression_seen else " — before compression"),
+            disk_state,
+        ),
     ])
 
     panels = []
@@ -304,7 +331,7 @@ def render(sites: List[Dict[str, Any]]) -> str:
 <div class="wrap">
   <header>
     <h1>Kalshi Capture Watch</h1>
-    <div class="sub">Phase 1 read-only capture &middot; <b>%d markets</b> across <b>%d sites</b> &middot; generated %s</div>
+    <div class="sub">Phase 1 read-only capture &middot; <b>%d markets</b> captured independently at <b>%d sites</b> &middot; generated %s</div>
   </header>
 
   <div class="verdict %s">

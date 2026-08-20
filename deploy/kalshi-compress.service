@@ -4,4 +4,4 @@ Description=Compress closed Kalshi capture segments
 [Service]
 Type=oneshot
 User=ec2-user
-ExecStart=/usr/bin/find /home/ec2-user/kalshibot/data -name "capture-*.jsonl" -mmin +120 -exec gzip -9 {} ;
+ExecStart=/home/ec2-user/kalshibot/deploy/compress-segments.sh
