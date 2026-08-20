@@ -1,0 +1,83 @@
+version: 1
+
+selection:
+  status: open
+  min_close_minutes: 30
+  max_close_days: 21
+  exclude_multivariate: true
+  min_market_volume_fp: "0.00"
+  total_target: 507
+
+verticals:
+  zero_fee:
+    categories: ["Economics", "Crypto", "Elections", "Politics", "Financials"]
+    fee_regime: zero_fee
+    target_markets: 20
+    max_markets_per_series: 8
+    max_close_days: 400
+
+  sports_maker_charged:
+    categories: ["Sports"]
+    fee_regime: maker_charged
+    target_markets: 50
+    max_markets_per_series: 6
+
+  econ_maker_charged:
+    categories: ["Economics", "Financials"]
+    fee_regime: maker_charged
+    target_markets: 25
+    max_markets_per_series: 6
+
+  culture_maker_charged:
+    categories: ["Entertainment", "Science and Technology"]
+    fee_regime: maker_charged
+    target_markets: 12
+    max_markets_per_series: 4
+
+  crypto_maker_free:
+    categories: ["Crypto"]
+    fee_regime: maker_free
+    target_markets: 60
+    max_markets_per_series: 10
+
+  weather_maker_free:
+    categories: ["Climate and Weather"]
+    fee_regime: maker_free
+    target_markets: 80
+    max_markets_per_series: 10
+
+  econ_maker_free:
+    categories: ["Economics", "Financials"]
+    fee_regime: maker_free
+    target_markets: 60
+    max_markets_per_series: 8
+
+  culture_maker_free:
+    categories: ["Entertainment", "Science and Technology", "Health", "Social"]
+    fee_regime: maker_free
+    target_markets: 70
+    max_markets_per_series: 8
+
+  sports_maker_free:
+    categories: ["Sports"]
+    fee_regime: maker_free
+    target_markets: 70
+    max_markets_per_series: 6
+
+  longtail_maker_free:
+    categories:
+      - "Politics"
+      - "Elections"
+      - "Companies"
+      - "World"
+      - "Commodities"
+      - "Transportation"
+      - "Mentions"
+      - "Exotics"
+      - "Education"
+    fee_regime: maker_free
+    target_markets: 60
+    max_markets_per_series: 6
+
+pinned_series: []
+pinned_markets: []
