@@ -4,12 +4,12 @@ import json
 import os
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from config import exchange
 from config.exchange import SETTLEMENT_VALUE
 from feed import recorder as rec
-from feed.book import BookIntegrityError, BookSet, BookState, OrderBook
+from feed.book import BookIntegrityError, BookSet, BookState, Level, OrderBook
 from feed.fixed import parse_count_fp, parse_price
 from research.replay import read_records
 
@@ -199,6 +199,12 @@ def top_of_book(book: OrderBook) -> Optional[TopOfBook]:
     return TopOfBook(yes_bid=yes[0], yes_size_fp=yes[1], no_bid=no[0], no_size_fp=no[1])
 
 
+def best_levels(book: OrderBook) -> Tuple[Optional[Level], Optional[Level]]:
+    if book.state is not BookState.VALID:
+        return None, None
+    return book.best_yes_bid(), book.best_no_bid()
+
+
 @dataclass(frozen=True)
 class BookChange:
     recv_ns: int
@@ -207,6 +213,8 @@ class BookChange:
     ticker: str
     valid: bool
     top: Optional[TopOfBook]
+    best_yes: Optional[Level] = None
+    best_no: Optional[Level] = None
 
 
 @dataclass(frozen=True)
@@ -391,6 +399,7 @@ class SessionStream:
 
         self.stats.book_events += 1
         ts_ms = body.get("ts_ms")
+        best_yes, best_no = best_levels(book)
         yield BookChange(
             recv_ns=int(record.get("recv_ns") or 0),
             mono_ns=int(record.get("mono_ns") or 0),
@@ -398,6 +407,8 @@ class SessionStream:
             ticker=ticker,
             valid=True,
             top=top_of_book(book),
+            best_yes=best_yes,
+            best_no=best_no,
         )
 
     def _on_trade(self, record: Dict[str, Any], body: Dict[str, Any]) -> Optional[TradeTick]:
