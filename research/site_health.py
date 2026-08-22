@@ -38,6 +38,24 @@ def _disk(root: str) -> Dict[str, Any]:
     }
 
 
+def _universe(root: str) -> Dict[str, Any]:
+    total = 0
+    shards = set()
+    sessions = 0
+    for path in glob.glob(os.path.join(root, "*", "manifest.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        sessions += 1
+        total = max(total, int(manifest.get("universe", {}).get("universe_total") or 0))
+        index = manifest.get("shard_index")
+        if isinstance(index, int):
+            shards.add(index)
+    return {"markets_total": total, "shards": len(shards), "sessions": sessions}
+
+
 def _scan(root: str) -> Dict[str, Any]:
     gaps = reconnects = integrity = 0
     messages: Dict[str, int] = {}
@@ -88,6 +106,9 @@ def collect(root: str = "data") -> Dict[str, Any]:
     report = evaluate(root, verify_replay=False)
     scan = _scan(root)
     disk = _disk(root)
+    universe = _universe(root)
+    if universe["markets_total"]:
+        scan["markets_tracked"] = universe["markets_total"]
 
     raw_per_day = 0.0
     if scan["uptime_seconds"] > 0:
@@ -101,7 +122,8 @@ def collect(root: str = "data") -> Dict[str, Any]:
         "site": os.environ.get("KALSHI_SITE", "unknown"),
         "hostname": os.uname().nodename,
         "collected_at_ms": int(time.time() * 1000),
-        "shards": len(report["sessions"]),
+        "shards": universe["shards"] or len(report["sessions"]),
+        "sessions": universe["sessions"],
         "totals": report["totals"],
         "criteria": report["criteria"],
         "scan": scan,

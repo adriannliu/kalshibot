@@ -283,7 +283,8 @@ def render(sites: List[Dict[str, Any]]) -> str:
                 "capturing",
                 "".join([
                     _row("Uptime (longest shard)", _dur(scan["uptime_seconds"])),
-                    _row("Shards", str(site.get("shards", 0))),
+                    _row("Shards", "%s active, %s sessions recorded" % (
+                        site.get("shards", 0), site.get("sessions", "?"))),
                     _row("Markets tracked", "{:,}".format(scan["markets_tracked"])),
                     _row("Gapped fraction", "%.5f" % gapped, g_state),
                     _row("Sequence gaps / hour", "%.1f" % scan["gaps_per_hour"]),
