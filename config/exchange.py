@@ -40,6 +40,10 @@ SERVER_PING_INTERVAL_S = 10
 
 MARKET_DATA_CHANNELS = ("orderbook_delta", "ticker", "trade")
 ORDERBOOK_CHANNEL = "orderbook_delta"
+LIFECYCLE_CHANNEL = "market_lifecycle_v2"
+
+LIFECYCLE_EVENT_DETERMINED = "determined"
+LIFECYCLE_EVENT_SETTLED = "settled"
 
 USE_YES_PRICE = False
 

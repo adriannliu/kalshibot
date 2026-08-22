@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--site", default=None)
+    parser.add_argument("--no-lifecycle", dest="capture_lifecycle", action="store_false", default=True)
     return parser
 
 
@@ -44,6 +45,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         shard_index=args.shard_index,
         shard_count=args.shard_count,
         site=args.site,
+        capture_lifecycle=args.capture_lifecycle,
     )
     if not 0 <= config.shard_index < config.shard_count:
         raise SystemExit(

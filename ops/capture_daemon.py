@@ -30,9 +30,22 @@ TYPE_OK = "ok"
 TYPE_ERROR = "error"
 TYPE_TICKER = "ticker"
 TYPE_TRADE = "trade"
+TYPE_LIFECYCLE = "market_lifecycle_v2"
 
 KNOWN_TYPES = frozenset(
-    {TYPE_SNAPSHOT, TYPE_DELTA, TYPE_SUBSCRIBED, TYPE_OK, TYPE_ERROR, TYPE_TICKER, TYPE_TRADE, "unsubscribed"}
+    {
+        TYPE_SNAPSHOT,
+        TYPE_DELTA,
+        TYPE_SUBSCRIBED,
+        TYPE_OK,
+        TYPE_ERROR,
+        TYPE_TICKER,
+        TYPE_TRADE,
+        TYPE_LIFECYCLE,
+        "event_lifecycle",
+        "event_fee_update",
+        "unsubscribed",
+    }
 )
 
 
@@ -53,6 +66,7 @@ class CaptureConfig:
     shard_index: int = 0
     shard_count: int = 1
     site: Optional[str] = None
+    capture_lifecycle: bool = True
 
 
 def git_revision() -> Optional[str]:
@@ -163,6 +177,11 @@ class CaptureDaemon:
                 "shard_size": self._config.shard_size,
                 "use_yes_price": self._config.use_yes_price,
                 "channels": list(exchange.MARKET_DATA_CHANNELS),
+                "lifecycle_channel": (
+                    exchange.LIFECYCLE_CHANNEL
+                    if (self._config.capture_lifecycle and self._config.shard_index == 0)
+                    else None
+                ),
                 "stale_feed_seconds": self._config.stale_feed_seconds,
                 "digest_interval_seconds": self._config.digest_interval_seconds,
             },
@@ -225,6 +244,19 @@ class CaptureDaemon:
             self._recorder.record_event(
                 rec.KIND_COMMAND,
                 {"cmd": "subscribe", "id": command_id, "channel": BOOK_CHANNEL, "markets": len(shard)},
+            )
+
+        if self._config.capture_lifecycle and self._config.shard_index == 0:
+            command_id = await self._transport.send_command(
+                "subscribe", {"channels": [exchange.LIFECYCLE_CHANNEL]}
+            )
+            self._pending_subscriptions[command_id] = {
+                "channel": exchange.LIFECYCLE_CHANNEL,
+                "tickers": [],
+            }
+            self._recorder.record_event(
+                rec.KIND_COMMAND,
+                {"cmd": "subscribe", "id": command_id, "channel": exchange.LIFECYCLE_CHANNEL},
             )
 
         for channel in (TYPE_TRADE, TYPE_TICKER):
