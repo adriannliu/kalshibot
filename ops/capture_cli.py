@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-root", default="data")
     parser.add_argument("--session-id", default=None)
     parser.add_argument("--shard-size", type=int, default=exchange.MARKETS_PER_SUBSCRIPTION)
-    parser.add_argument("--stale-feed-seconds", type=float, default=30.0)
+    parser.add_argument("--stale-feed-seconds", type=float, default=150.0)
     parser.add_argument("--digest-interval", type=float, default=300.0)
     parser.add_argument("--health-interval", type=float, default=60.0)
     parser.add_argument("--max-seconds", type=float, default=None)

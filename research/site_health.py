@@ -7,7 +7,7 @@ import shutil
 import time
 from typing import Any, Dict, List
 
-from research.phase1_report import evaluate
+from research.phase1_report import evaluate, read_session_stats
 
 GAP_MARKER = '"k":"gap"'
 INTEGRITY_MARKER = '"k":"integrity"'
@@ -62,34 +62,25 @@ def _scan(root: str) -> Dict[str, Any]:
     uptime = 0.0
     offset: Dict[str, Any] = {}
     markets = 0
-    for path in glob.glob(os.path.join(root, "*", "capture-*.jsonl")):
-        last = None
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                for line in handle:
-                    if GAP_MARKER in line:
-                        gaps += 1
-                    elif RECONNECT_MARKER in line:
-                        reconnects += 1
-                    elif INTEGRITY_MARKER in line:
-                        integrity += 1
-                    elif HEALTH_MARKER in line:
-                        last = line
-        except OSError:
+
+    for directory in sorted(glob.glob(os.path.join(root, "*"))):
+        if not os.path.isdir(directory):
             continue
-        if not last:
+        stats = read_session_stats(directory)
+        if not stats:
             continue
-        try:
-            payload = json.loads(last).get("d") or {}
-        except ValueError:
-            continue
-        uptime = max(uptime, float(payload.get("uptime_seconds") or 0.0))
-        markets += int(payload.get("markets_tracked") or 0)
-        for name, count in (payload.get("messages") or {}).items():
+        uptime = max(uptime, float(stats.get("uptime_seconds") or 0.0))
+        markets += int(stats.get("markets_tracked") or 0)
+        reconnects += int(stats.get("reconnects") or 0)
+        integrity += int(stats.get("integrity_errors") or 0)
+        for kind, count in (stats.get("gaps") or {}).items():
+            gaps += int(count)
+        for name, count in (stats.get("messages") or {}).items():
             messages[name] = messages.get(name, 0) + int(count)
-        candidate = payload.get("clock_offset") or {}
+        candidate = stats.get("clock_offset") or {}
         if candidate.get("count"):
             offset = candidate
+
     return {
         "gaps": gaps,
         "reconnects": reconnects,

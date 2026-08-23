@@ -56,7 +56,7 @@ class CaptureConfig:
     session_id: Optional[str] = None
     shard_size: int = exchange.MARKETS_PER_SUBSCRIPTION
     use_yes_price: bool = exchange.USE_YES_PRICE
-    stale_feed_seconds: float = 30.0
+    stale_feed_seconds: float = 150.0
     digest_interval_seconds: float = 300.0
     health_interval_seconds: float = 60.0
     resync_retry_seconds: float = 5.0
