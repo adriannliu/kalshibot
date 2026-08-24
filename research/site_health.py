@@ -4,6 +4,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import time
 from typing import Any, Dict, List
 
@@ -35,6 +36,91 @@ def _disk(root: str) -> Dict[str, Any]:
         "capture_compressed_bytes": compressed,
         "segments_raw": sum(1 for p in paths if p.endswith(".jsonl")),
         "segments_compressed": sum(1 for p in paths if p.endswith(".gz")),
+    }
+
+
+WATCHED_SERVICES = ("kalshi-universe.service", "kalshi-compress.service")
+WATCHED_TIMERS = ("kalshi-universe.timer", "kalshi-compress.timer")
+SHARD_UNIT = "kalshi-capture@%d.service"
+UNIVERSE_MAX_AGE_HOURS = 36.0
+
+
+def _systemctl(unit: str, properties: List[str]) -> Dict[str, str]:
+    try:
+        result = subprocess.run(
+            ["systemctl", "show", unit, "--no-pager"] + ["-p" + p for p in properties],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    values: Dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            values[key] = value
+    return values
+
+
+def _units(root: str, shard_count: int) -> Dict[str, Any]:
+    services = []
+    for unit in WATCHED_SERVICES:
+        shown = _systemctl(unit, ["Result", "ExecMainStatus", "ExecMainExitTimestamp", "ActiveState"])
+        if not shown:
+            continue
+        services.append({
+            "unit": unit,
+            "result": shown.get("Result", "unknown"),
+            "exit_status": shown.get("ExecMainStatus", ""),
+            "last_finished": shown.get("ExecMainExitTimestamp", ""),
+            "active_state": shown.get("ActiveState", ""),
+            "healthy": shown.get("Result") == "success",
+        })
+
+    timers = []
+    for unit in WATCHED_TIMERS:
+        shown = _systemctl(unit, ["ActiveState", "LastTriggerUSec", "NextElapseUSecRealtime"])
+        if not shown:
+            continue
+        timers.append({
+            "unit": unit,
+            "active_state": shown.get("ActiveState", ""),
+            "last_trigger": shown.get("LastTriggerUSec", ""),
+            "next_elapse": shown.get("NextElapseUSecRealtime", ""),
+            "healthy": shown.get("ActiveState") == "active",
+        })
+
+    shards = []
+    for index in range(max(1, shard_count)):
+        unit = SHARD_UNIT % index
+        shown = _systemctl(unit, ["ActiveState", "SubState", "NRestarts"])
+        if not shown:
+            continue
+        shards.append({
+            "unit": unit,
+            "active_state": shown.get("ActiveState", ""),
+            "sub_state": shown.get("SubState", ""),
+            "restarts": int(shown.get("NRestarts") or 0),
+            "healthy": shown.get("ActiveState") == "active" and shown.get("SubState") == "running",
+        })
+
+    universe_path = os.path.join(root, "universe.json")
+    age_hours = None
+    if os.path.exists(universe_path):
+        age_hours = (time.time() - os.path.getmtime(universe_path)) / 3600.0
+
+    return {
+        "services": services,
+        "timers": timers,
+        "shards": shards,
+        "universe_age_hours": age_hours,
+        "universe_stale": age_hours is None or age_hours > UNIVERSE_MAX_AGE_HOURS,
+        "all_healthy": (
+            all(s["healthy"] for s in services)
+            and all(t["healthy"] for t in timers)
+            and all(s["healthy"] for s in shards)
+            and age_hours is not None
+            and age_hours <= UNIVERSE_MAX_AGE_HOURS
+        ),
     }
 
 
@@ -98,6 +184,7 @@ def collect(root: str = "data") -> Dict[str, Any]:
     scan = _scan(root)
     disk = _disk(root)
     universe = _universe(root)
+    units = _units(root, universe["shards"] or 4)
     if universe["markets_total"]:
         scan["markets_tracked"] = universe["markets_total"]
 
@@ -113,6 +200,7 @@ def collect(root: str = "data") -> Dict[str, Any]:
         "site": os.environ.get("KALSHI_SITE", "unknown"),
         "hostname": os.uname().nodename,
         "collected_at_ms": int(time.time() * 1000),
+        "units": units,
         "shards": universe["shards"] or len(report["sessions"]),
         "sessions": universe["sessions"],
         "totals": report["totals"],

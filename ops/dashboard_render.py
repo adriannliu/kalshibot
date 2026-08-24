@@ -183,6 +183,24 @@ def render(sites: List[Dict[str, Any]]) -> str:
     markets = max((s["scan"]["markets_tracked"] for s in live if s.get("scan")), default=0)
     unreachable = [s for s in sites if not s.get("reachable")]
 
+    unit_problems: List[str] = []
+    for site in live:
+        units = site.get("units") or {}
+        name = site.get("site", "?")
+        for service in units.get("services", []):
+            if not service["healthy"]:
+                unit_problems.append("%s %s last run %s" % (name, service["unit"], service["result"]))
+        for timer in units.get("timers", []):
+            if not timer["healthy"]:
+                unit_problems.append("%s %s is %s" % (name, timer["unit"], timer["active_state"]))
+        for shard in units.get("shards", []):
+            if not shard["healthy"]:
+                unit_problems.append("%s %s is %s/%s" % (
+                    name, shard["unit"], shard["active_state"], shard["sub_state"]))
+        age = units.get("universe_age_hours")
+        if units.get("universe_stale") and age is not None:
+            unit_problems.append("%s universe is %.0fh old" % (name, age))
+
     compression_seen = any(s["disk"]["segments_compressed"] > 0 for s in live if s.get("disk"))
     youngest_uptime = min(
         (s["scan"]["uptime_seconds"] for s in live if s.get("scan")), default=0.0
@@ -209,6 +227,8 @@ def render(sites: List[Dict[str, Any]]) -> str:
         blocking.append("%d integrity error(s)" % integrity)
     if soonest_full is not None and soonest_full <= REQUIRED_DAYS and disk_state == "bad":
         blocking.append("disk fills in %.1f days, before the 14-day mark" % soonest_full)
+    if unit_problems:
+        blocking.extend(unit_problems[:4])
 
     pending = []
     if not compression_seen and not compression_due:
@@ -218,7 +238,11 @@ def render(sites: List[Dict[str, Any]]) -> str:
         )
 
     if blocking:
-        verdict_cls = "bad" if (unreachable or integrity or worst_gapped >= GATE_GAPPED) else "warn"
+        verdict_cls = (
+            "bad"
+            if (unreachable or integrity or worst_gapped >= GATE_GAPPED or unit_problems)
+            else "warn"
+        )
         headline = "Capture is at risk"
         detail = "Blocking the 14-day clock: " + "; ".join(blocking) + "."
     else:
@@ -323,6 +347,54 @@ def render(sites: List[Dict[str, Any]]) -> str:
                _esc(json.dumps(crit["detail"])[:120]))
         )
 
+    unit_rows: List[str] = []
+    for site in sites:
+        units = site.get("units") or {}
+        name = _esc(site.get("site", "?"))
+        age = units.get("universe_age_hours")
+        if age is not None:
+            unit_rows.append(
+                "<tr><td>%s</td><td>universe.json</td><td><span class='pill %s'>%s</span></td>"
+                "<td class='n'>%.1f h old</td></tr>" % (
+                    name,
+                    "bad" if units.get("universe_stale") else "ok",
+                    "stale" if units.get("universe_stale") else "current",
+                    age,
+                )
+            )
+        for service in units.get("services", []):
+            unit_rows.append(
+                "<tr><td>%s</td><td>%s</td><td><span class='pill %s'>%s</span></td>"
+                "<td class='n'>%s</td></tr>" % (
+                    name, _esc(service["unit"]),
+                    "ok" if service["healthy"] else "bad",
+                    _esc(service["result"]),
+                    _esc(service["last_finished"] or "never"),
+                )
+            )
+        for timer in units.get("timers", []):
+            unit_rows.append(
+                "<tr><td>%s</td><td>%s</td><td><span class='pill %s'>%s</span></td>"
+                "<td class='n'>%s</td></tr>" % (
+                    name, _esc(timer["unit"]),
+                    "ok" if timer["healthy"] else "bad",
+                    _esc(timer["active_state"]),
+                    _esc(timer["last_trigger"] or "never"),
+                )
+            )
+        for shard in units.get("shards", []):
+            unit_rows.append(
+                "<tr><td>%s</td><td>%s</td><td><span class='pill %s'>%s</span></td>"
+                "<td class='n'>%d restarts</td></tr>" % (
+                    name, _esc(shard["unit"]),
+                    "ok" if shard["healthy"] else "bad",
+                    _esc("%s/%s" % (shard["active_state"], shard["sub_state"])),
+                    shard["restarts"],
+                )
+            )
+    if not unit_rows:
+        unit_rows.append("<tr><td colspan='4'>no unit information reported</td></tr>")
+
     stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
     return """<title>Kalshi Capture Watch</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -347,6 +419,17 @@ def render(sites: List[Dict[str, Any]]) -> str:
   <section>
     <h2>Sites</h2>
     <div class="grid g2" style="margin-top:12px">%s</div>
+  </section>
+
+  <section>
+    <h2>Supporting units</h2>
+    <p class="note-block" style="margin-top:12px">Capture can look healthy while the machinery that keeps it
+    correct is failing. A broken <code>kalshi-universe</code> run leaves the market list frozen; a broken
+    <code>kalshi-compress</code> run fills the disk. Both failed silently for days before this table existed.</p>
+    <div class="panel" style="margin-top:12px"><div class="scroll"><table>
+      <thead><tr><th>Site</th><th>Unit</th><th>State</th><th style="text-align:right">Last run</th></tr></thead>
+      <tbody>%s</tbody>
+    </table></div></div>
   </section>
 
   <section>
@@ -385,4 +468,4 @@ ssh ec2-user@HOST 'cd ~/kalshibot &amp;&amp; ./.venv/bin/python -m research.phas
   <footer>Snapshot, not live &mdash; re-run <span class="mono">.venv/bin/python -m ops.dashboard</span> to refresh. Phase 2 is a GO/NO-GO gate; do not build the bot until it passes.</footer>
 </div>
 """ % (CSS, markets, len(sites), _esc(stamp), verdict_cls, _esc(headline), _esc(detail),
-       tiles, "".join(panels), "".join(crit_html))
+       tiles, "".join(panels), "".join(unit_rows), "".join(crit_html))
