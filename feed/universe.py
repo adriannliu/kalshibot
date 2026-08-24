@@ -160,16 +160,18 @@ def _strike(record: Dict[str, Any], key: str) -> str:
     return "" if value is None else str(value)
 
 
+EVENT_INDEX_FAILURES: List[str] = []
+
+
 def fetch_event_index(client: RestClient, series_ticker: str) -> Dict[str, Dict[str, Any]]:
     index: Dict[str, Dict[str, Any]] = {}
     try:
-        records = client.events(series_ticker=series_ticker, with_nested_markets="false")
-    except Exception:
-        return index
-    for record in records:
-        ticker = record.get("event_ticker") or record.get("ticker")
-        if ticker:
-            index[str(ticker)] = record
+        for record in client.events(series_ticker=series_ticker, with_nested_markets="false"):
+            ticker = record.get("event_ticker") or record.get("ticker")
+            if ticker:
+                index[str(ticker)] = record
+    except Exception as error:
+        EVENT_INDEX_FAILURES.append("%s: %r" % (series_ticker, error))
     return index
 
 

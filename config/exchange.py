@@ -58,6 +58,8 @@ ENDPOINT_ENDPOINT_COSTS = "/account/endpoint_costs"
 ENDPOINT_FEE_TIERS = "/margin/fee_tiers"
 ENDPOINT_MARKETS = "/markets"
 ENDPOINT_EVENTS = "/events"
+EVENTS_PAGE_LIMIT = 200
+MARKETS_PAGE_LIMIT = 1000
 ENDPOINT_ORDERBOOK = "/markets/{ticker}/orderbook"
 
 
