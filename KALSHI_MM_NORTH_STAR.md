@@ -1,7 +1,7 @@
 # Kalshi Market Making Bot — North Star
 
 **Status:** Phase 1 (data capture). Not trading. No capital at risk.
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-31
 
 ---
 
@@ -91,27 +91,53 @@ maker_fee = round_up(M_maker * 0.0175 * C * P * (1 - P))
 - `P` = price in dollars (50¢ → 0.5), `C` = contract count.
 - `M_taker` default 1. `M_maker` **default 0**.
 - Rounding is up, such that `fee + position_cost` lands on a centicent (1e-4).
-- Critically: `M_maker = 1` on an explicit series list that includes essentially
-  all liquid markets — every NFL/NBA/MLB/NHL/NCAA game series, CPI, Fed decisions,
-  payrolls, unemployment, major championships and awards.
+- The maker-fee list is keyed off the series `fee_type` returned by
+  `GET /series`, **not** `fee_multiplier`. Only `fee_type: "quadratic"` waives
+  maker fees. `fee_multiplier` (1, 0.5, or 0) is a separate scalar that scales
+  both legs. Conflating the two inverts the entire fee picture.
+- Measured 2026-08-19 across all 13,306 series: **130 charge maker fees, 13,176
+  do not.** 107 of the 130 are Sports. Fourteen series charge nothing at all on
+  either leg via `fee_multiplier: 0`.
 
 **Consequence to internalize:** on an `M_maker = 1` market at 50¢, maker round
 trip costs ~0.875¢ against a 1¢ minimum tick. Naive two-sided quoting there is
-structurally unprofitable before adverse selection is even considered. The
-long tail (`M_maker = 0`) is where maker fees vanish. That asymmetry is the
-central fact shaping strategy selection.
+structurally unprofitable before adverse selection is even considered.
+
+**Revised 2026-08-31.** An earlier draft claimed the `M_maker = 1` list "includes
+essentially all liquid markets." That is false and it matters, because it would
+have sent Phase 1 to capture only the half of the exchange that cannot work. The
+maker-fee list is ~1% of series, and the two highest-volume series on the
+exchange — `KXBTC15M` (12.3B contracts) and `KXBTCD` (6.4B) — are maker-fee
+**free**, as are `KXATPCHALLENGERMATCH`, `KXITFMATCH` and `KXUFCFIGHT`. High
+volume and maker-fee-free are not mutually exclusive. The asymmetry between the
+two regimes remains the central fact shaping strategy selection; the mistake was
+assuming it lines up with liquidity. It does not, and the Phase 1 universe is
+stratified by fee regime accordingly.
 
 ### Incentive programs
 
 - **Liquidity Incentive Program** — pays for resting two-sided depth regardless
   of fills, scored on per-second book snapshots against a Reference Price with a
   distance Discount Factor. Snapshots lacking two-sided depth at Target Size are
-  excluded and scale the payout down. Daily pools ~$10–$1,000.
+  excluded and scale the payout down. Rewards $1–$1,000 per market per day.
+  Reference Price is found by walking down from the best bid to the first level
+  where cumulative resting size reaches one fifth of Target Size. Target Size is
+  more than 100 and fewer than 20,000 contracts. Discount Factor is set per time
+  period between 0 and 1.00. Time periods run up to 31 days and may overlap.
+  **Program end: 2027-01-01.**
 - **Volume Incentive Program** — pro-rata from a pool, capped at $0.005 per
-  contract, on contracts priced $0.03–$0.97.
+  contract, on contracts priced $0.03–$0.97. Does not apply to perpetual
+  futures. **Program end: 2027-09-01.**
+- **Liquidity Provider Program** — a separate, more formal tier requiring an
+  executed Market Maker Agreement and participation in periodic auctions to
+  become a Designated Liquidity Provider on Incentivized Series. Listed programs
+  terminate 2026-12-31. Out of scope for a single retail operator without an MM
+  agreement, but note it exists: the depth we compete against on Incentivized
+  Series may be contractually obligated to be there.
 
-**Treat all incentive revenue as a terminable subsidy.** Current terms run to
-2026-09-01. Report subsidy P&L and trading P&L as separate line items, always.
+**Treat all incentive revenue as a terminable subsidy.** Kalshi states it can end
+or modify any of these at any time, so the published end dates are ceilings, not
+commitments. Report subsidy P&L and trading P&L as separate line items, always.
 A strategy that is only profitable with subsidy must be labeled as such in
 every report, so we never confuse "we have an edge" with "we are being paid to
 show up."
@@ -411,11 +437,25 @@ Things that will produce a confident, wrong answer:
 
 Track answers here as they are resolved.
 
-- [ ] Does the Liquidity Incentive Program extend past 2026-09-01?
-- [ ] Exact current `M_maker` series list — pull programmatically, do not transcribe.
+- [x] **Does the Liquidity Incentive Program extend past 2026-09-01?** Yes.
+      Verified 2026-08-31 against `help.kalshi.com`: the Liquidity Incentive
+      Program runs to **2027-01-01** and the Volume Incentive Program to
+      **2027-09-01**. The 2026-09-01 date in an earlier draft of §2 was stale.
+      Both remain terminable at Kalshi's discretion, so §2's treatment of
+      incentive revenue as subsidy is unchanged.
+- [x] **Exact current `M_maker` series list — pull programmatically.** Done.
+      `GET /series` returns `fee_type` and `fee_multiplier` per series. Only
+      `fee_type: "quadratic"` waives maker fees; `fee_multiplier` (1, 0.5, 0) is
+      a separate scalar applying to both legs. Measured 2026-08-19: 130 of 13,306
+      series charge maker fees. See `docs/phase_reports/phase_1_build.md` §3.
 - [ ] Per-market position limits by series.
-- [ ] `GET /margin/fee_tiers` returns per-ticker maker/taker rates — prefer this
-      over the PDF as the runtime source of truth?
+- [x] **`GET /margin/fee_tiers` as the runtime source of truth?** No. Verified
+      2026-08-19: it covers only 16 perpetual crypto series on a different linear
+      schedule (maker 0.0002 / taker 0.0012). Use `GET /series` instead.
 - [ ] Tax treatment of event contract P&L; 1099 handling. Consult a professional
       before any scale.
-- [ ] Which markets have sub-cent ticks via `price_ranges[].step`?
+- [x] **Which markets have sub-cent ticks via `price_ranges[].step`?** They
+      exist and are live in our capture: several markets quote a 0.10¢ spread,
+      and the lifecycle channel reports `price_level_structure` values of
+      `linear_cent` and `deci_cent` with explicit `price_ranges[].step`. Any
+      assumption of a 1¢ tick is wrong for these.
