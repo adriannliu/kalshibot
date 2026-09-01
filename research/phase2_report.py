@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -22,6 +24,13 @@ MIN_NET_PER_CONTRACT = Decimal("0.001")
 DEFAULT_CAPTURE_SHARE = Decimal("0.05")
 DEFAULT_MIN_WEEKLY_DOLLARS = Decimal("100")
 DEFAULT_WINDOWS = 2
+
+WINDOW_MODE_INTERLEAVED = "interleaved"
+WINDOW_MODE_CHRONOLOGICAL = "chronological"
+DEFAULT_WINDOW_MODE = WINDOW_MODE_INTERLEAVED
+
+CLEAN_CAPTURE_SINCE = "2026-08-24T00:00:00Z"
+MS_PER_DAY = 86_400_000
 MIN_WINDOW_OVERLAP = 0.5
 
 
@@ -197,25 +206,60 @@ def projected_weekly_dollars(
     return total
 
 
+def parse_since(text: Optional[str]) -> Optional[int]:
+    if not text:
+        return None
+    cleaned = text.strip().replace("Z", "+0000")
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d%z", "%Y-%m-%dT%H:%M%z"):
+        try:
+            return int(datetime.datetime.strptime(cleaned, fmt).timestamp() * 1000)
+        except ValueError:
+            continue
+    raise ValueError("unparseable --since value %r" % (text,))
+
+
+def filter_since(
+    analyses: Sequence[SessionResult], since_ms: Optional[int]
+) -> List[SessionResult]:
+    if since_ms is None:
+        return list(analyses)
+    return [
+        a for a in analyses
+        if a.started_at_ms is not None and a.started_at_ms >= since_ms
+    ]
+
+
 def assign_windows(
-    analyses: Sequence[SessionResult], windows: int
+    analyses: Sequence[SessionResult],
+    windows: int,
+    mode: str = WINDOW_MODE_CHRONOLOGICAL,
 ) -> List[List[SessionResult]]:
     stamped = [a for a in analyses if a.started_at_ms is not None]
     if windows < 2 or len(stamped) < 2:
         return [list(analyses)]
+
+    buckets: List[List[SessionResult]] = [[] for _ in range(windows)]
+
+    if mode == WINDOW_MODE_INTERLEAVED:
+        for analysis in analyses:
+            stamp = analysis.started_at_ms
+            if stamp is None:
+                buckets[0].append(analysis)
+                continue
+            buckets[(stamp // MS_PER_DAY) % windows].append(analysis)
+        return buckets
+
     first = min(a.started_at_ms for a in stamped)
     last = max(a.started_at_ms for a in stamped)
     if last <= first:
         return [list(analyses)]
     span = last - first
-    buckets: List[List[SessionAnalyses]] = [[] for _ in range(windows)]
     for analysis in analyses:
         stamp = analysis.started_at_ms
         if stamp is None:
             buckets[0].append(analysis)
             continue
-        index = min(windows - 1, int((stamp - first) * windows // span))
-        buckets[index].append(analysis)
+        buckets[min(windows - 1, int((stamp - first) * windows // span))].append(analysis)
     return buckets
 
 
@@ -236,6 +280,7 @@ def evaluate_site(
     capture_share: Decimal = DEFAULT_CAPTURE_SHARE,
     min_weekly_dollars: Decimal = DEFAULT_MIN_WEEKLY_DOLLARS,
     windows: int = DEFAULT_WINDOWS,
+    window_mode: str = DEFAULT_WINDOW_MODE,
 ) -> Dict[str, Any]:
     structure = micro.merge_market_stats(a.markets for a in analyses)
     selection = adverse.merge_market_stats(a.adverse_markets for a in analyses)
@@ -244,7 +289,7 @@ def evaluate_site(
     weekly = projected_weekly_dollars(verdicts, capture_share)
 
     window_sets: List[Dict[str, Any]] = []
-    for index, bucket in enumerate(assign_windows(analyses, windows)):
+    for index, bucket in enumerate(assign_windows(analyses, windows, window_mode)):
         if not bucket:
             window_sets.append({"window": index, "sessions": 0, "qualifying": []})
             continue
@@ -357,12 +402,18 @@ def evaluate(
     capture_share: Decimal = DEFAULT_CAPTURE_SHARE,
     min_weekly_dollars: Decimal = DEFAULT_MIN_WEEKLY_DOLLARS,
     windows: int = DEFAULT_WINDOWS,
+    window_mode: str = DEFAULT_WINDOW_MODE,
+    since: Optional[str] = None,
     site: Optional[str] = None,
     jobs: int = 1,
 ) -> Dict[str, Any]:
     results, skipped = _collect(root, jobs)
+    since_ms = parse_since(since)
+    kept = filter_since(results, since_ms)
+    excluded = len(results) - len(kept)
+
     by_site: Dict[str, List[SessionResult]] = {}
-    for result in results:
+    for result in kept:
         if site is not None and result.site != site:
             continue
         by_site.setdefault(result.site, []).append(result)
@@ -373,6 +424,7 @@ def evaluate(
             horizon=horizon,
             capture_share=capture_share,
             min_weekly_dollars=min_weekly_dollars,
+            window_mode=window_mode,
             windows=windows,
         )
         for label, analyses in sorted(by_site.items())
@@ -391,6 +443,13 @@ def evaluate(
 
     return {
         "root": root,
+        "analysis_window": {
+            "since": since,
+            "window_mode": window_mode,
+            "windows": windows,
+            "sessions_analyzed": len(kept),
+            "sessions_excluded_as_contaminated": excluded,
+        },
         "sites": sites,
         "primary_site": primary,
         "cross_site_agreement": agreement,
@@ -408,19 +467,38 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--capture-share", default=str(DEFAULT_CAPTURE_SHARE))
     parser.add_argument("--min-weekly-dollars", default=str(DEFAULT_MIN_WEEKLY_DOLLARS))
     parser.add_argument("--windows", type=int, default=DEFAULT_WINDOWS)
+    parser.add_argument(
+        "--window-mode", default=DEFAULT_WINDOW_MODE,
+        choices=[WINDOW_MODE_INTERLEAVED, WINDOW_MODE_CHRONOLOGICAL],
+    )
+    parser.add_argument("--since", default=CLEAN_CAPTURE_SINCE)
+    parser.add_argument("--all-history", dest="since", action="store_const", const=None)
     parser.add_argument("--site")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     args = parser.parse_args(argv)
 
+    since_ms = parse_since(args.since)
     report = evaluate(
         args.data_root,
         horizon=args.horizon,
         capture_share=Decimal(args.capture_share),
         min_weekly_dollars=Decimal(args.min_weekly_dollars),
         windows=args.windows,
+        window_mode=args.window_mode,
+        since=args.since,
         site=args.site,
         jobs=args.jobs,
     )
+    excluded = report["analysis_window"]["sessions_excluded_as_contaminated"]
+    analyzed = report["analysis_window"]["sessions_analyzed"]
+    if args.since and analyzed == 0 and excluded > 0:
+        print(
+            "refusing to report: --since %s excluded all %d sessions; "
+            "pass --all-history to analyse everything" % (args.since, excluded),
+            file=sys.stderr,
+        )
+        return 2
+
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["phase2_gate_met"] else 1
 
