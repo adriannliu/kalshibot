@@ -80,10 +80,18 @@ sudo install -m 440 -o root -g root deploy/kalshi-sudoers /etc/sudoers.d/kalshi
 sudo visudo -c >/dev/null
 sudo systemctl daemon-reload
 
+sudo systemctl enable kalshi-capture.target
 for i in $(seq 0 $((SHARDS - 1))); do
     sudo systemctl enable --now "kalshi-capture@${i}.service"
 done
 sudo systemctl enable --now kalshi-universe.timer kalshi-compress.timer
+
+for unit in kalshi-capture.target kalshi-universe.timer kalshi-compress.timer; do
+    [ "$(systemctl is-enabled "$unit")" = "enabled" ] || {
+        echo "$unit is not enabled; capture would not survive a reboot" >&2
+        exit 1
+    }
+done
 
 sleep 20
 echo

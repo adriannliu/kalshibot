@@ -15,6 +15,15 @@ from ops.monitor import CaptureMonitor
 BOOK_TYPES = ("orderbook_snapshot", "orderbook_delta")
 
 
+class TruncatedFinalRecord(ValueError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            "final record in %s is truncated, which happens when the process was "
+            "killed mid-write; pass allow_truncated_tail=True to skip it" % path
+        )
+        self.path = path
+
+
 @dataclass
 class ReplayResult:
     session_id: str
@@ -26,6 +35,7 @@ class ReplayResult:
     gaps_live: int = 0
     gaps_replayed: int = 0
     integrity_errors: int = 0
+    truncated_segments: int = 0
     message_types: Dict[str, int] = field(default_factory=dict)
     clock_offset: Dict[str, Any] = field(default_factory=dict)
     live_report: Optional[Dict[str, Any]] = None
@@ -49,18 +59,32 @@ def segment_paths(session_dir: str) -> List[str]:
     return sorted(compressed + plain, key=lambda p: p[:-3] if p.endswith(".gz") else p)
 
 
+TRUNCATED_TAIL_ALLOWED = 1
+
+
 def read_records(session_dir: str) -> Iterator[Dict[str, Any]]:
     for path in segment_paths(session_dir):
         opener = gzip.open if path.endswith(".gz") else open
         with opener(path, "rt", encoding="utf-8") as handle:
+            pending: Optional[str] = None
             for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                yield json.loads(line)
+                if pending is not None:
+                    yield json.loads(pending)
+                stripped = line.strip()
+                pending = stripped if stripped else None
+            if pending is None:
+                continue
+            try:
+                yield json.loads(pending)
+            except ValueError:
+                raise TruncatedFinalRecord(path)
 
 
-def replay_session(session_dir: str, strict_ordinals: bool = True) -> ReplayResult:
+def replay_session(
+    session_dir: str,
+    strict_ordinals: bool = True,
+    allow_truncated_tail: bool = False,
+) -> ReplayResult:
     manifest_path = os.path.join(session_dir, "manifest.json")
     session_id = os.path.basename(os.path.normpath(session_dir))
     if os.path.exists(manifest_path):
@@ -73,7 +97,17 @@ def replay_session(session_dir: str, strict_ordinals: bool = True) -> ReplayResu
     expected_ordinal = 0
     counts: Dict[str, int] = {}
 
-    for record in read_records(session_dir):
+    records = read_records(session_dir)
+    while True:
+        try:
+            record = next(records)
+        except StopIteration:
+            break
+        except TruncatedFinalRecord:
+            if not allow_truncated_tail:
+                raise
+            result.truncated_segments += 1
+            break
         result.records += 1
         ordinal = record.get("n")
         expected_ordinal += 1
@@ -195,9 +229,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("session_dir")
     parser.add_argument("--allow-ordinal-gaps", action="store_true")
     parser.add_argument("--max-mismatches", type=int, default=20)
+    parser.add_argument("--allow-truncated-tail", action="store_true")
     args = parser.parse_args(argv)
 
-    result = replay_session(args.session_dir, strict_ordinals=not args.allow_ordinal_gaps)
+    result = replay_session(
+        args.session_dir,
+        strict_ordinals=not args.allow_ordinal_gaps,
+        allow_truncated_tail=args.allow_truncated_tail,
+    )
     print(
         json.dumps(
             {
@@ -213,6 +252,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "gaps_live": result.gaps_live,
                 "gaps_replayed": result.gaps_replayed,
                 "integrity_errors": result.integrity_errors,
+                "truncated_segments": result.truncated_segments,
                 "clock_offset": result.clock_offset,
             },
             indent=2,
