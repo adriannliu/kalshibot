@@ -157,6 +157,16 @@ def _apply_ws_record(
     if isinstance(ts_ms, int) and ts_ms > 0:
         monitor.offsets.add(record["recv_ns"] // 1_000_000 - ts_ms)
 
+    if message_type == "ok":
+        sid = payload.get("sid")
+        tickers = body.get("market_tickers") if isinstance(body, dict) else None
+        if isinstance(sid, int) and isinstance(tickers, list):
+            subscription = books.subscription(sid)
+            if subscription is not None:
+                for ticker in tickers:
+                    subscription.book(ticker)
+        return
+
     if message_type not in BOOK_TYPES:
         return
 
