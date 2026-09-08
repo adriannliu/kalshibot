@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from config.exchange import series_ticker_of
 from research import adverse_selection as adverse
 from research import constraints as constraint_module
 from research import microstructure as micro
@@ -274,6 +275,13 @@ def _overlap(left: Sequence[str], right: Sequence[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _series_overlap(left: Sequence[str], right: Sequence[str]) -> float:
+    return _overlap(
+        [series_ticker_of(t) for t in left],
+        [series_ticker_of(t) for t in right],
+    )
+
+
 def evaluate_site(
     analyses: Sequence[SessionResult],
     horizon: str = DEFAULT_HORIZON,
@@ -311,12 +319,13 @@ def evaluate_site(
         )
 
     populated = [w for w in window_sets if w["qualifying"]]
-    overlap = (
-        _overlap(window_sets[0]["qualifying"], window_sets[-1]["qualifying"])
-        if len(window_sets) >= 2
-        else 0.0
-    )
-    stable = len(populated) >= 2 and overlap >= MIN_WINDOW_OVERLAP
+    if len(window_sets) >= 2:
+        first, last = window_sets[0]["qualifying"], window_sets[-1]["qualifying"]
+        overlap = _overlap(first, last)
+        series_overlap = _series_overlap(first, last)
+    else:
+        overlap = series_overlap = 0.0
+    stable = len(populated) >= 2 and series_overlap >= MIN_WINDOW_OVERLAP
 
     violations = constraint_module.merge_violation_stats(a.violations for a in analyses)
 
@@ -340,8 +349,10 @@ def evaluate_site(
             "passed": stable,
             "detail": {
                 "windows": window_sets,
-                "jaccard_first_last": overlap,
+                "series_jaccard_first_last": series_overlap,
+                "market_jaccard_first_last": overlap,
                 "required_overlap": MIN_WINDOW_OVERLAP,
+                "unit_of_stability": "series",
             },
         },
     ]
