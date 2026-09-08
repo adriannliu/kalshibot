@@ -1,7 +1,7 @@
 # Kalshi Market Making Bot — North Star
 
 **Status:** Phase 1 (data capture). Not trading. No capital at risk.
-**Last updated:** 2026-08-31
+**Last updated:** 2026-09-07
 
 ---
 
@@ -215,7 +215,38 @@ continue.
 ## 4. Phases and exit criteria
 
 Do not begin a phase until the previous phase's exit criteria are met and
-recorded in `docs/phase_reports/`.
+recorded in `docs/phase_reports/`, **except as permitted by the parallelism rule
+below.**
+
+### Parallelism rule (revised 2026-09-07)
+
+The original strictly serial ordering costs eleven weeks. Two facts make that
+worse than it needs to be:
+
+- **The Liquidity Incentive Program ends 2027-01-01.** Any strategy that needs
+  subsidy to clear breakeven has a hard deadline, and a serial plan leaves almost
+  no runway to use it.
+- **Fair value calibration accrues at one day per day.** Phase 4 needs
+  forecast-versus-outcome pairs. Starting that clock at week 7 means starting from
+  zero and then waiting; starting it now means the pairs are already there when
+  Phase 5 needs them. This is the one input that cannot be bought back later.
+
+Therefore Phase 3 and Phase 4 may run **in parallel with Phase 2**, subject to:
+
+1. **The Phase 2 gate is unchanged and absolute.** No execution engine, no order
+   state machine, and no code that can submit an order until the Phase 2 exit
+   criteria are met with real recorded data. A backtester and a fair value model
+   are neither; an order path is. `tests/test_layering.py` enforces this.
+2. **Nothing built in parallel may assume Phase 2 passes.** A backtester with no
+   edge to test is a discarded week, not a sunk cost that justifies continuing.
+   If Phase 2 says no, Phase 3 and 4 work is abandoned along with everything else.
+3. **Phase 5 and Phase 6 remain strictly serial and strictly calendar-bound.**
+   Chaos testing, 7 days unattended in demo, and 14 days live with zero state
+   divergences are not compressible. Shortening validation to save a week is
+   precisely the anti-pattern in §9.
+
+What this does not change: if Phase 2 reports no edge, the correct outcome is
+still to stop and pivot to §5. Parallelism buys calendar time, not permission.
 
 ### Phase 1 — Read-only capture (weeks 1–3)
 
