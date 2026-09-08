@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from auth.credentials import load_from_env
 from auth.signer import RequestSigner
@@ -34,8 +34,18 @@ def tickers_from_manifests(root: str) -> Set[str]:
     return tickers
 
 
-def settlements_from_capture(root: str) -> Dict[str, Dict[str, Any]]:
+def settlements_from_capture(
+    root: str, tickers: Optional[Set[str]] = None
+) -> Dict[str, Dict[str, Any]]:
+    found, _ = scan_capture(root, tickers)
+    return found
+
+
+def scan_capture(
+    root: str, tickers: Optional[Set[str]] = None
+) -> Tuple[Dict[str, Dict[str, Any]], int]:
     found: Dict[str, Dict[str, Any]] = {}
+    observed = 0
     paths = glob.glob(os.path.join(root, "*", "capture-*.jsonl")) + glob.glob(
         os.path.join(root, "*", "capture-*.jsonl.gz")
     )
@@ -63,6 +73,9 @@ def settlements_from_capture(root: str) -> Dict[str, Dict[str, Any]]:
                     ticker = body.get("market_ticker")
                     if not ticker or value is None:
                         continue
+                    observed += 1
+                    if tickers is not None and ticker not in tickers:
+                        continue
                     found[ticker] = {
                         "settlement_value_dollars": str(value),
                         "result": body.get("result"),
@@ -73,7 +86,7 @@ def settlements_from_capture(root: str) -> Dict[str, Dict[str, Any]]:
                     }
         except OSError:
             continue
-    return found
+    return found, observed
 
 
 def settlements_from_rest(client: RestClient, tickers: Iterable[str]) -> Dict[str, Dict[str, Any]]:
@@ -116,7 +129,7 @@ def settlements_from_rest(client: RestClient, tickers: Iterable[str]) -> Dict[st
 
 def build(root: str, use_rest: bool = True) -> Dict[str, Any]:
     tickers = tickers_from_manifests(root)
-    captured = settlements_from_capture(root)
+    captured, exchange_wide_observed = scan_capture(root, tickers)
 
     merged: Dict[str, Dict[str, Any]] = dict(captured)
     rest_only = 0
@@ -129,13 +142,16 @@ def build(root: str, use_rest: bool = True) -> Dict[str, Any]:
             rest_only = len(recovered)
             merged.update(recovered)
 
+    settled = len(merged)
     return {
         "root": root,
         "universe_tickers": len(tickers),
         "from_lifecycle": len(captured),
         "from_rest": rest_only,
-        "settled_total": len(merged),
-        "unsettled": len(tickers) - len(merged),
+        "settled_total": settled,
+        "unsettled": max(0, len(tickers) - settled),
+        "coverage": (settled / len(tickers)) if tickers else 0.0,
+        "exchange_wide_settlements_observed": exchange_wide_observed,
         "settlements": merged,
     }
 

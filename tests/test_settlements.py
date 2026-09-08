@@ -84,3 +84,39 @@ def test_load_map_returns_decimals_for_the_analysis(tmp_path):
     mapping = load_map(path)
     assert mapping == {"T-1": Decimal("0.5000")}
     assert isinstance(mapping["T-1"], Decimal)
+
+
+def test_only_universe_tickers_are_kept_from_the_lifecycle_firehose(tmp_path):
+    write_session(
+        str(tmp_path),
+        "a",
+        ["MINE-1"],
+        [
+            {"market_ticker": "MINE-1", "event_type": "determined", "settlement_value": "1.0000"},
+            {"market_ticker": "NOT-MINE-1", "event_type": "determined", "settlement_value": "0.0000"},
+            {"market_ticker": "NOT-MINE-2", "event_type": "determined", "settlement_value": "1.0000"},
+        ],
+    )
+    report = build(str(tmp_path), use_rest=False)
+
+    assert report["universe_tickers"] == 1
+    assert report["settled_total"] == 1
+    assert "NOT-MINE-1" not in report["settlements"]
+    assert report["exchange_wide_settlements_observed"] == 3
+
+
+def test_unsettled_is_never_negative_and_coverage_is_a_fraction(tmp_path):
+    write_session(
+        str(tmp_path),
+        "a",
+        ["MINE-1", "MINE-2"],
+        [
+            {"market_ticker": "MINE-1", "event_type": "determined", "settlement_value": "1.0000"},
+            {"market_ticker": "OTHER", "event_type": "determined", "settlement_value": "0.0000"},
+        ],
+    )
+    report = build(str(tmp_path), use_rest=False)
+
+    assert report["unsettled"] == 1
+    assert 0.0 <= report["coverage"] <= 1.0
+    assert report["coverage"] == 0.5
