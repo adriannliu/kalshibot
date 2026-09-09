@@ -72,6 +72,7 @@ class UniverseResolution:
     fee_table: Optional[FeeScheduleTable] = None
     categories_seen: List[str] = field(default_factory=list)
     unmatched_categories: List[str] = field(default_factory=list)
+    fetch_failures: List[str] = field(default_factory=list)
     per_vertical: Dict[str, int] = field(default_factory=dict)
     per_regime: Dict[str, int] = field(default_factory=dict)
 
@@ -161,6 +162,7 @@ def _strike(record: Dict[str, Any], key: str) -> str:
 
 
 EVENT_INDEX_FAILURES: List[str] = []
+MARKET_FETCH_FAILURES: List[str] = []
 
 
 def fetch_event_index(client: RestClient, series_ticker: str) -> Dict[str, Dict[str, Any]]:
@@ -229,7 +231,8 @@ def resolve(client: RestClient, spec: UniverseSpec) -> UniverseResolution:
         try:
             records = list(client.markets(series_ticker=series_ticker, status=spec.selection.status))
             candidates = [r for r in records if market_passes(r, close_ceiling)]
-        except Exception:
+        except Exception as error:
+            MARKET_FETCH_FAILURES.append("%s: %r" % (series_ticker, error))
             return 0
         events = fetch_event_index(client, series_ticker)
         markets_per_event: Dict[str, int] = {}
@@ -323,6 +326,7 @@ def resolve(client: RestClient, spec: UniverseSpec) -> UniverseResolution:
                 fee_regime=fee_table.regime(series_ticker_of(ticker)),
             )
 
+    resolution.fetch_failures = list(MARKET_FETCH_FAILURES) + list(EVENT_INDEX_FAILURES)
     resolution.markets = sorted(chosen.values(), key=lambda m: m.ticker)
     for market in resolution.markets:
         resolution.per_regime[market.fee_regime] = resolution.per_regime.get(market.fee_regime, 0) + 1

@@ -30,9 +30,11 @@ def book(ns, t, valid=True):
 
 
 def trade(ns, t, count_fp=500000, taker_yes=True):
+    price = t.yes_bid if t is not None else Decimal("0.45")
+    other = t.no_bid if t is not None else Decimal("0.50")
     return TradeTick(
         recv_ns=ns, mono_ns=ns, ts_ms=None, ticker="T",
-        yes_price=t.yes_bid, no_price=t.no_bid, count_fp=count_fp,
+        yes_price=price, no_price=other, count_fp=count_fp,
         taker_outcome_side="yes" if taker_yes else "no",
         taker_book_side="bid" if taker_yes else "ask", top=t,
     )
@@ -49,7 +51,7 @@ def test_a_fill_is_not_scored_until_the_horizon_elapses():
     e.on_trade(trade(1, t, taker_yes=False))
 
     assert e.result.fills == 1
-    assert e.result.marked == 0
+    assert e.result.marked_at_horizon == 0
     assert e.result.gross == 0
 
 
@@ -60,7 +62,7 @@ def test_a_mid_that_does_not_move_scores_the_captured_spread_only():
     e.on_trade(trade(1, t, taker_yes=False))
     e.on_book(book(11 * 10**9, t))
 
-    assert e.result.marked == 1
+    assert e.result.marked_at_horizon == 1
     assert e.result.adverse == 0
     assert e.result.gross > 0
 
@@ -71,7 +73,7 @@ def test_a_mid_moving_against_a_yes_fill_is_charged_as_adverse():
     e.on_trade(trade(1, top(), taker_yes=False))
     e.on_book(book(11 * 10**9, top(yes_bid="0.35", no_bid="0.60")))
 
-    assert e.result.marked == 1
+    assert e.result.marked_at_horizon == 1
     assert e.result.adverse > 0
 
 
@@ -109,14 +111,34 @@ def test_maker_fees_are_charged_only_where_the_series_charges_them():
     assert charged.result.fees > 0
 
 
-def test_unresolved_marks_are_forced_at_session_end_and_counted():
+def test_a_mark_forced_early_is_counted_apart_from_one_that_reached_its_horizon():
     e = engine()
     e.on_book(book(0, top()))
     e.on_trade(trade(1, top(), taker_yes=False))
-    e.finalize()
+    e.finalize(now_ns=2)
 
-    assert e.result.marked == 1
-    assert e.result.unmarked == 0
+    assert e.result.marked_forced == 1
+    assert e.result.marked_at_horizon == 0
+
+
+def test_a_mark_that_reached_its_horizon_is_not_counted_as_forced():
+    e = engine()
+    e.on_book(book(0, top()))
+    e.on_trade(trade(1, top(), taker_yes=False))
+    e.on_book(book(11 * 10**9, top()))
+    e.finalize(now_ns=12 * 10**9)
+
+    assert e.result.marked_at_horizon == 1
+    assert e.result.marked_forced == 0
+
+
+def test_a_fill_with_no_mid_available_is_counted_not_discarded():
+    e = engine()
+    e.model.place(Side.YES, Decimal("0.45"), 1000, 0, 0)
+    e.on_trade(trade(1, None, taker_yes=False))
+
+    assert e.result.fills == 0
+    assert e.result.fills_unscoreable == 1
 
 
 def test_an_invalid_book_cancels_resting_quotes():

@@ -49,8 +49,9 @@ class MarketResult:
     fees: Decimal = Decimal(0)
     adverse: Decimal = Decimal(0)
     quotable_events: int = 0
-    marked: int = 0
-    unmarked: int = 0
+    marked_at_horizon: int = 0
+    marked_forced: int = 0
+    fills_unscoreable: int = 0
 
     @property
     def net(self) -> Decimal:
@@ -99,12 +100,15 @@ class MarketBacktest:
             adverse = drift * self.config.adverse_multiplier
             self.result.gross += captured * mark.count
             self.result.adverse += adverse * mark.count
-            self.result.marked += 1
+            if force and now_ns < mark.due_ns:
+                self.result.marked_forced += 1
+            else:
+                self.result.marked_at_horizon += 1
         self._pending = remaining
 
-    def finalize(self) -> None:
-        self._resolve_marks(0, self._last_mid, force=True)
-        self.result.unmarked += len(self._pending)
+    def finalize(self, now_ns: int = 0) -> None:
+        self._resolve_marks(now_ns, self._last_mid, force=True)
+        self.result.fills_unscoreable += len(self._pending)
         self._pending = []
 
     def on_book(self, change: BookChange) -> None:
@@ -165,6 +169,8 @@ class MarketBacktest:
         count = contracts(size_fp)
         mid = top.mid if top is not None else self._last_mid
         if mid is None:
+            self.result.fills_unscoreable += 1
+            self._resting.pop(side, None)
             return
 
         self.result.fills += 1
@@ -195,8 +201,9 @@ class BacktestReport:
         existing.fees += result.fees
         existing.adverse += result.adverse
         existing.quotable_events += result.quotable_events
-        existing.marked += result.marked
-        existing.unmarked += result.unmarked
+        existing.marked_at_horizon += result.marked_at_horizon
+        existing.marked_forced += result.marked_forced
+        existing.fills_unscoreable += result.fills_unscoreable
 
     def totals(self) -> Dict[str, object]:
         fills = sum(m.fills for m in self.markets.values())
@@ -220,8 +227,9 @@ class BacktestReport:
             "net_cents_per_contract": (net / contracts_filled * 100) if contracts_filled else Decimal(0),
             "gross_cents_per_contract": (gross / contracts_filled * 100) if contracts_filled else Decimal(0),
             "adverse_cents_per_contract": (adverse / contracts_filled * 100) if contracts_filled else Decimal(0),
-            "marks_resolved": sum(m.marked for m in self.markets.values()),
-            "marks_forced_at_session_end": sum(m.unmarked for m in self.markets.values()),
+            "marks_at_horizon": sum(m.marked_at_horizon for m in self.markets.values()),
+            "marks_forced_early": sum(m.marked_forced for m in self.markets.values()),
+            "fills_unscoreable": sum(m.fills_unscoreable for m in self.markets.values()),
         }
 
 
@@ -248,7 +256,9 @@ def run_session(
             engines[key] = found
         return found
 
+    last_ns = 0
     for event in stream.events():
+        last_ns = max(last_ns, getattr(event, "recv_ns", 0) or 0)
         ticker = getattr(event, "ticker", None)
         if ticker is None or (allowed is not None and ticker not in allowed):
             continue
@@ -260,6 +270,6 @@ def run_session(
                 engine.on_trade(event)
 
     for (label, _ticker), engine in engines.items():
-        engine.finalize()
+        engine.finalize(last_ns)
         reports[label].add(engine.result)
     return reports

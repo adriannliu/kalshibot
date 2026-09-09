@@ -52,6 +52,7 @@ def run(markets_path: str, sample: int) -> Dict[str, Any]:
         "fee_table_source": resolution.fee_table.source,
         "unrecognized_fee_types": sorted(resolution.fee_table.unrecognized_fee_types),
         "unmatched_categories": resolution.unmatched_categories,
+        "fetch_failures": resolution.fetch_failures[:10],
         "categories_available": resolution.categories_seen,
         "sample": [
             {
@@ -85,6 +86,11 @@ def run(markets_path: str, sample: int) -> Dict[str, Any]:
     for vertical in spec.verticals:
         if verticals.get(vertical.name, 0) == 0:
             problems.append("stratum %s resolved to zero markets" % vertical.name)
+    if resolution.fetch_failures:
+        problems.append(
+            "%d series failed to fetch; the universe is silently smaller than intended"
+            % len(resolution.fetch_failures)
+        )
     if resolution.fee_table.unrecognized_fee_types:
         problems.append(
             "unrecognized fee_type values, fees may be understated: %s"

@@ -45,6 +45,10 @@ def read_session_stats(directory: str) -> Dict[str, Any]:
     return {}
 
 
+class UnreadableSession(RuntimeError):
+    pass
+
+
 def merge_intervals(
     intervals: List[Tuple[float, float]], tolerance: float
 ) -> List[Tuple[float, float]]:
@@ -71,6 +75,7 @@ def evaluate(root: str, verify_replay: bool = True) -> Dict[str, Any]:
     total_valid = 0.0
     total_gapped = 0.0
     replay_failures: List[str] = []
+    unreadable: List[str] = []
     offsets: List[Dict[str, Any]] = []
 
     for directory in session_dirs(root):
@@ -92,6 +97,9 @@ def evaluate(root: str, verify_replay: bool = True) -> Dict[str, Any]:
             sites.add(manifest["site"])
 
         live = read_session_stats(directory)
+        if not live:
+            entry["stats_unreadable"] = True
+            unreadable.append(directory)
         result = replay_session(directory, strict_ordinals=True) if verify_replay else None
         if result is not None:
             entry["replay_verified"] = result.verified
@@ -145,6 +153,11 @@ def evaluate(root: str, verify_replay: bool = True) -> Dict[str, Any]:
             "offline_reconstruction",
             verify_replay and not replay_failures and bool(sessions),
             {"failed_sessions": replay_failures, "sessions": len(sessions)},
+        ),
+        Criterion(
+            "every_session_accounted_for",
+            not unreadable,
+            {"sessions_with_unreadable_stats": unreadable},
         ),
         Criterion(
             "clock_offset_characterized",
