@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 
 from backtest.engine import BacktestReport, StrategyConfig, run_session
-from research.session import session_dirs
+from feed.tape import session_dirs
 
 SENSITIVITY = (Decimal("0.5"), Decimal("1.0"), Decimal("1.5"))
 

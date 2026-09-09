@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from config.exchange import SETTLEMENT_VALUE
 from backtest.fill_model import FillModel, NaiveFillModel, QueueAwareFillModel, Side
 from feed.fixed import contracts
-from research.session import BookChange, MarketMeta, SessionStream, TopOfBook, TradeTick
+from feed.tape import BookChange, MarketMeta, SessionStream, TopOfBook, TradeTick
 
 TWO = Decimal(2)
 

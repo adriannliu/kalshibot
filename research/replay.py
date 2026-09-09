@@ -10,18 +10,16 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from feed import recorder as rec
 from feed.book import BookIntegrityError, BookSet, BookState
+from feed.tape import (
+    TruncatedFinalRecord,
+    read_records,
+    segment_paths,
+)
 from ops.monitor import CaptureMonitor
 
 BOOK_TYPES = ("orderbook_snapshot", "orderbook_delta")
 
 
-class TruncatedFinalRecord(ValueError):
-    def __init__(self, path: str) -> None:
-        super().__init__(
-            "final record in %s is truncated, which happens when the process was "
-            "killed mid-write; pass allow_truncated_tail=True to skip it" % path
-        )
-        self.path = path
 
 
 @dataclass
@@ -49,35 +47,11 @@ class ReplayResult:
         )
 
 
-def segment_paths(session_dir: str) -> List[str]:
-    compressed = sorted(glob.glob(os.path.join(session_dir, "capture-*.jsonl.gz")))
-    plain = [
-        path
-        for path in glob.glob(os.path.join(session_dir, "capture-*.jsonl"))
-        if path + ".gz" not in compressed
-    ]
-    return sorted(compressed + plain, key=lambda p: p[:-3] if p.endswith(".gz") else p)
 
 
 TRUNCATED_TAIL_ALLOWED = 1
 
 
-def read_records(session_dir: str) -> Iterator[Dict[str, Any]]:
-    for path in segment_paths(session_dir):
-        opener = gzip.open if path.endswith(".gz") else open
-        with opener(path, "rt", encoding="utf-8") as handle:
-            pending: Optional[str] = None
-            for line in handle:
-                if pending is not None:
-                    yield json.loads(pending)
-                stripped = line.strip()
-                pending = stripped if stripped else None
-            if pending is None:
-                continue
-            try:
-                yield json.loads(pending)
-            except ValueError:
-                raise TruncatedFinalRecord(path)
 
 
 def replay_session(
