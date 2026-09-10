@@ -205,16 +205,17 @@ class BacktestReport:
         existing.marked_forced += result.marked_forced
         existing.fills_unscoreable += result.fills_unscoreable
 
-    def totals(self) -> Dict[str, object]:
+    def totals(self, adverse_multiplier: Decimal = Decimal("1")) -> Dict[str, object]:
         fills = sum(m.fills for m in self.markets.values())
         quotes = sum(m.quotes_placed for m in self.markets.values())
         contracts_filled = sum((m.filled_contracts for m in self.markets.values()), Decimal(0))
         gross = sum((m.gross for m in self.markets.values()), Decimal(0))
         fees = sum((m.fees for m in self.markets.values()), Decimal(0))
-        adverse = sum((m.adverse for m in self.markets.values()), Decimal(0))
+        adverse = sum((m.adverse for m in self.markets.values()), Decimal(0)) * adverse_multiplier
         net = gross - fees - adverse
         return {
             "label": self.label,
+            "adverse_multiplier": adverse_multiplier,
             "markets": len(self.markets),
             "quotes_placed": quotes,
             "fills": fills,

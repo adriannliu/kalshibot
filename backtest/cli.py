@@ -3,20 +3,29 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from backtest.engine import BacktestReport, StrategyConfig, run_session
+from backtest.engine import BacktestReport, MarketResult, StrategyConfig, run_session
 from feed.tape import session_dirs
 
 SENSITIVITY = (Decimal("0.5"), Decimal("1.0"), Decimal("1.5"))
 
 
-def merge(into: Dict[str, BacktestReport], new: Dict[str, BacktestReport]) -> None:
-    for label, report in new.items():
-        target = into.setdefault(label, BacktestReport(label, report.config))
-        for result in report.markets.values():
-            target.add(result)
+def _run_one(payload: Tuple[str, StrategyConfig]) -> Tuple[str, Optional[Dict[str, List[MarketResult]]], str]:
+    directory, config = payload
+    try:
+        reports = run_session(directory, config)
+    except Exception as error:
+        return os.path.basename(directory), None, repr(error)[:200]
+    return (
+        os.path.basename(directory),
+        {label: list(report.markets.values()) for label, report in reports.items()},
+        "",
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -27,6 +36,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--order-size", type=int, default=1000)
     parser.add_argument("--max-inventory", type=int, default=10000)
     parser.add_argument("--horizon-seconds", type=int, default=10)
+    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
 
@@ -34,34 +44,51 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.sessions:
         dirs = dirs[: args.sessions]
 
-    sweep: Dict[str, Dict[str, object]] = {}
+    config = StrategyConfig(
+        min_edge=Decimal(args.min_edge),
+        order_size_fp=args.order_size,
+        max_inventory_fp=args.max_inventory,
+        horizon_seconds=args.horizon_seconds,
+        adverse_multiplier=Decimal("1"),
+    )
 
-    for multiplier in SENSITIVITY:
-        config = StrategyConfig(
-            min_edge=Decimal(args.min_edge),
-            order_size_fp=args.order_size,
-            max_inventory_fp=args.max_inventory,
-            horizon_seconds=args.horizon_seconds,
-            adverse_multiplier=multiplier,
-        )
-        combined: Dict[str, BacktestReport] = {}
-        for directory in dirs:
-            try:
-                merge(combined, run_session(directory, config))
-            except Exception as error:
-                print("skip %s: %r" % (os.path.basename(directory), error))
-        sweep["adverse_x%s" % multiplier] = {
-            label: report.totals() for label, report in combined.items()
-        }
+    combined: Dict[str, BacktestReport] = {
+        "naive": BacktestReport("naive", config),
+        "queue_aware": BacktestReport("queue_aware", config),
+    }
+    failures: List[str] = []
+    started = time.time()
+
+    print("running %d sessions across %d jobs" % (len(dirs), args.jobs), file=sys.stderr, flush=True)
+    with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+        done = 0
+        for name, results, error in pool.map(_run_one, [(d, config) for d in dirs]):
+            done += 1
+            if results is None:
+                failures.append("%s: %s" % (name, error))
+            else:
+                for label, markets in results.items():
+                    for result in markets:
+                        combined[label].add(result)
+            print(
+                "  [%3d/%d] %-32s %s  %.0fs elapsed"
+                % (done, len(dirs), name, "ok" if results is not None else "FAILED", time.time() - started),
+                file=sys.stderr, flush=True,
+            )
 
     payload = {
         "data_root": args.data_root,
         "sessions": len(dirs),
+        "sessions_failed": failures,
         "min_edge": args.min_edge,
         "order_size_fp": args.order_size,
         "horizon_seconds": args.horizon_seconds,
         "adverse_source": "measured per fill by marking to the mid at horizon",
-        "sweep": sweep,
+        "sweep": {
+            "adverse_x%s" % m: {label: report.totals(m) for label, report in combined.items()}
+            for m in SENSITIVITY
+        },
+        "elapsed_seconds": round(time.time() - started, 1),
     }
     text = json.dumps(payload, indent=2, default=str)
     if args.out:
@@ -69,7 +96,5 @@ def main(argv: Optional[List[str]] = None) -> int:
             handle.write(text + "\n")
     print(text)
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

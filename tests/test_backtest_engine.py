@@ -155,3 +155,27 @@ def test_no_quotes_are_placed_when_edge_is_below_threshold():
     e.on_book(book(0, top(yes_bid="0.49", no_bid="0.50")))
 
     assert e.result.quotes_placed == 0
+
+
+def test_the_sensitivity_sweep_needs_only_one_pass():
+    from backtest.engine import BacktestReport
+
+    e = engine()
+    e.on_book(book(0, top()))
+    e.on_trade(trade(1, top(), taker_yes=False))
+    e.on_book(book(11 * 10**9, top(yes_bid="0.35", no_bid="0.60")))
+    e.finalize(12 * 10**9)
+
+    report = BacktestReport("x", e.config)
+    report.add(e.result)
+
+    half = report.totals(Decimal("0.5"))
+    one = report.totals(Decimal("1.0"))
+    onehalf = report.totals(Decimal("1.5"))
+
+    assert half["gross_dollars"] == one["gross_dollars"] == onehalf["gross_dollars"]
+    assert half["fees_dollars"] == one["fees_dollars"] == onehalf["fees_dollars"]
+    assert half["fills"] == one["fills"] == onehalf["fills"]
+    assert half["adverse_dollars"] * 2 == one["adverse_dollars"]
+    assert onehalf["adverse_dollars"] == one["adverse_dollars"] * Decimal("1.5")
+    assert one["net_dollars"] == one["gross_dollars"] - one["fees_dollars"] - one["adverse_dollars"]
